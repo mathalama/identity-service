@@ -33,6 +33,16 @@ public class UserController {
         );
     }
 
+    @PostMapping("/deleteUser/{username}")
+    public void deleteUser(@PathVariable String username) {
+        userService.deleteUsers(username);
+    }
+
+    @PostMapping("/deleteUsers")
+    public void deleteAllUsers() {
+        userService.deleteAllUsers();
+    }
+
     @GetMapping("/getAll")
     public List<UserResponse> showUsers() {
         return userService.getAllUsers();
