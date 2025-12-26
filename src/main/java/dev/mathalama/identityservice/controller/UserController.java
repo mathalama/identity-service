@@ -1,8 +1,8 @@
 package dev.mathalama.identityservice.controller;
 
-import dev.mathalama.identityservice.dto.CreateUserRequest;
+import dev.mathalama.identityservice.dto.SignInRequest;
+import dev.mathalama.identityservice.dto.SignUpRegister;
 import dev.mathalama.identityservice.dto.UserResponse;
-import dev.mathalama.identityservice.entity.Users;
 import dev.mathalama.identityservice.service.UserService;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
@@ -18,14 +18,9 @@ public class UserController {
         this.userService = userService;
     }
 
-    @GetMapping("/info")
-    public String getInfo() {
-        return "Hello, actually im good.";
-    }
-
     @PostMapping("/addUser")
     @ResponseStatus(HttpStatus.CREATED)
-    public void createUser(@RequestBody CreateUserRequest request) {
+    public void createUser(@RequestBody SignUpRegister request) {
         userService.registerUsers(
                 request.username(),
                 request.email(),
@@ -38,15 +33,16 @@ public class UserController {
         userService.deleteUsers(username);
     }
 
-    @PostMapping("/deleteUsers")
+    @PostMapping("/deleteAllUsers")
     public void deleteAllUsers() {
         userService.deleteAllUsers();
     }
 
-    @GetMapping("/getAll")
+    @GetMapping("/getAllUsers")
     public List<UserResponse> showUsers() {
         return userService.getAllUsers();
     }
+
 
 
 }

@@ -1,13 +1,11 @@
 package dev.mathalama.identityservice.service;
 
-import dev.mathalama.identityservice.dto.UserResponse;
-import dev.mathalama.identityservice.entity.Users;
+import dev.mathalama.identityservice.dto.*;
+import dev.mathalama.identityservice.entity.*;
 import dev.mathalama.identityservice.repository.UserRepository;
 import jakarta.transaction.Transactional;
-import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
@@ -24,13 +22,10 @@ public class UserService {
 
 
     public void registerUsers(String username, String email, String password) {
-        log.info("Adding new user!");
         if (userRepository.existsByEmail(email)) {
-            log.warn("Email already exists");
             throw new IllegalStateException("Email already exists");
         }
         if (userRepository.existsByUsername(username)) {
-            log.warn("Username already exists");
             throw new IllegalStateException("Username already exists");
         }
         String encodePassword = passwordEncoder.encode(password);
@@ -42,17 +37,17 @@ public class UserService {
                 .build();
 
         userRepository.save(user);
-        log.info("User was created");
     }
 
-//    public Users loginUsers(String email, String password) {
-//        if (userRepository.existsByEmail(email)) {
-//            throw new IllegalStateException("User not found");
-//        }
-//
-//
-//
-//    }
+    public void loginUsers(SignInRequest request) {
+        Users user = userRepository.findByEmail(request.email())
+                .orElseThrow(() -> new IllegalStateException("Invalid email or password"));
+
+
+        if (!passwordEncoder.matches(request.password(), user.getPassword())) {
+            throw new IllegalStateException("Invalid email or password");
+        }
+    }
 
     public List<UserResponse> getAllUsers() {
         log.info("Users will printed");
@@ -81,5 +76,16 @@ public class UserService {
         } else {
             log.warn("The database is empty");
         }
+    }
+
+    public void resetPassword(ResetPasswordRequest request) {
+        Users user = userRepository
+                .findByEmailIgnoreCaseOrUsernameIgnoreCase(
+                        request.login(), request.login()
+                )
+                .orElseThrow(() ->
+                        new IllegalStateException("Invalid credentials")
+                );
+        user.setPassword(passwordEncoder.encode(request.password()));
     }
 }

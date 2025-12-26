@@ -1,7 +1,6 @@
 package dev.mathalama.identityservice.dto;
 
-public record CreateUserRequest(
-        String username,
+public record SignInRequest(
         String email,
         String password
 ) {}
