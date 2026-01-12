@@ -1,7 +1,9 @@
 package dev.mathalama.identityservice.dto;
 
+import jakarta.annotation.Nonnull;
+
 public record SignUpRegister(
-        String username,
-        String email,
-        String password
+        @Nonnull String username,
+        @Nonnull String email,
+        @Nonnull String password
 ) {}

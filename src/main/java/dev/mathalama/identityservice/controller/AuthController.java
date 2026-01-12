@@ -4,11 +4,7 @@ import dev.mathalama.identityservice.dto.ResetPasswordRequest;
 import dev.mathalama.identityservice.dto.SignInRequest;
 import dev.mathalama.identityservice.dto.SignUpRegister;
 import dev.mathalama.identityservice.service.UserService;
-import org.springframework.stereotype.Controller;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequestMapping("/auth")
@@ -31,7 +27,7 @@ public class AuthController {
 
     @PostMapping("/login")
     public void signIn(@RequestBody SignInRequest request) {
-        userService.loginUsers(request);
+        userService.authenticate(request);
     }
 
     @PostMapping("/reset")

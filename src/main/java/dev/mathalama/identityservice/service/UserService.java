@@ -6,10 +6,14 @@ import dev.mathalama.identityservice.repository.UserRepository;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
+
+import static org.springframework.http.HttpStatus.*;
 
 @Slf4j
 @Service
@@ -20,63 +24,82 @@ public class UserService {
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
 
-
     public void registerUsers(String username, String email, String password) {
-        if (userRepository.existsByEmail(email)) {
-            throw new IllegalStateException("Email already exists");
-        }
-        if (userRepository.existsByUsername(username)) {
-            throw new IllegalStateException("Username already exists");
-        }
         String encodePassword = passwordEncoder.encode(password);
+        try {
+            Users user = Users.builder()
+                    .username(username)
+                    .email(email)
+                    .password(encodePassword)
+                    .build();
 
-        Users user = Users.builder()
-                .username(username)
-                .email(email)
-                .password(encodePassword)
-                .build();
-
-        userRepository.save(user);
-    }
-
-    public void loginUsers(SignInRequest request) {
-        Users user = userRepository.findByEmail(request.email())
-                .orElseThrow(() -> new IllegalStateException("Invalid email or password"));
-
-
-        if (!passwordEncoder.matches(request.password(), user.getPassword())) {
-            throw new IllegalStateException("Invalid email or password");
+            userRepository.save(user);
+        } catch (DataIntegrityViolationException ex) {
+            throw new ResponseStatusException(
+                    CONFLICT, "Username or email already exists"
+            );
         }
     }
 
+    public Users authenticate(SignInRequest request) {
+        Users user = userRepository
+                .findByEmailIgnoreCaseOrUsernameIgnoreCase(
+                        request.login(), request.login()
+                )
+                .orElseThrow(() ->
+                        new ResponseStatusException(
+                                UNAUTHORIZED,
+                                "Invalid email or password"
+                        )
+                );
+
+        if (!passwordEncoder.matches(
+                request.password(),
+                user.getPassword()
+        )) {
+            throw new ResponseStatusException(
+                    UNAUTHORIZED,
+                    "Invalid credentials"
+            );
+        }
+
+        return user;
+        // TODO: issue JWT token
+    }
+
+    ///  Get all users
     public List<UserResponse> getAllUsers() {
-        log.info("Users will printed");
+        log.info("Fetching all users");
+
         return userRepository.findAll()
                 .stream()
                 .map(UserResponse::from)
                 .toList();
-
     }
 
+    /// delete which user
     public void deleteUsers(String username) {
         log.info("Deleting user");
         if (userRepository.existsByUsername(username)) {
             userRepository.deleteByUsername(username);
         } else {
             log.warn("Users not found");
-            throw new IllegalStateException("User not found");
+            throw new ResponseStatusException(NOT_FOUND,"User not found");
         }
     }
 
+    /// delete all users
     public void deleteAllUsers() {
         log.info("Deleting all users");
-        if (userRepository.count() > 0) {
-            userRepository.deleteAll();
-            log.info("All users was deleted");
-        } else {
-            log.warn("The database is empty");
-        }
+        userRepository.deleteAll();
+        log.info("All users have been deleted");
     }
+
+    /// Get total user count
+    public long userCount() {
+        return userRepository.count();
+    }
+
 
     public void resetPassword(ResetPasswordRequest request) {
         Users user = userRepository
@@ -84,7 +107,7 @@ public class UserService {
                         request.login(), request.login()
                 )
                 .orElseThrow(() ->
-                        new IllegalStateException("Invalid credentials")
+                        new ResponseStatusException(UNAUTHORIZED, "Invalid credentials")
                 );
         user.setPassword(passwordEncoder.encode(request.password()));
     }
