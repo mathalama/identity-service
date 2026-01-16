@@ -1,0 +1,348 @@
+openapi: 3.0.3
+info:
+  title: Identity Service API
+  description: API specification for authentication, session management and user management endpoints.
+  version: 1.1.0
+servers:
+  - url: http://localhost:8080
+    description: Local development
+paths:
+  /info:
+    get:
+      tags:
+        - info
+      summary: Health/info endpoint
+      description: Returns a short string indicating the service is running.
+      responses:
+        "200":
+          description: Service info string.
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: Service is working.
+  /auth/signup:
+    post:
+      tags:
+        - auth
+      summary: Register a new user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SignUpRegister'
+      responses:
+        "201":
+          description: User created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        "400":
+          description: Validation error.
+        "409":
+          description: Username or email already exists.
+  /auth/login:
+    post:
+      tags:
+        - auth
+      summary: Authenticate a user and create session
+      description: Authenticates user credentials and creates a new session. Returns session information and sets JSESSIONID cookie.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SignInRequest'
+      responses:
+        "200":
+          description: Login successful. Session created.
+          headers:
+            Set-Cookie:
+              schema:
+                type: string
+                example: JSESSIONID=abc123; Path=/; HttpOnly
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionInfo'
+        "401":
+          description: Invalid credentials.
+  /auth/logout:
+    post:
+      tags:
+        - auth
+      summary: Logout and invalidate session
+      description: Invalidates the current user session.
+      responses:
+        "200":
+          description: Logout successful.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        "401":
+          description: No active session.
+  /auth/session:
+    get:
+      tags:
+        - session
+      summary: Get current session info
+      description: Returns information about the current active session.
+      responses:
+        "200":
+          description: Session information.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionInfo'
+        "401":
+          description: No active session.
+  /auth/session/check:
+    get:
+      tags:
+        - session
+      summary: Check if session is active
+      description: Returns authentication status.
+      responses:
+        "200":
+          description: Authentication status.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  authenticated:
+                    type: boolean
+                    example: true
+  /auth/sessions:
+    get:
+      tags:
+        - session
+      summary: Get all user sessions
+      description: Returns all active sessions for the current user.
+      responses:
+        "200":
+          description: List of user sessions.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SessionInfo'
+        "401":
+          description: No active session.
+    delete:
+      tags:
+        - session
+      summary: Invalidate all user sessions
+      description: Invalidates all sessions for the current user (logout from all devices).
+      responses:
+        "200":
+          description: All sessions invalidated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        "401":
+          description: No active session.
+  /auth/sessions/{sessionId}:
+    delete:
+      tags:
+        - session
+      summary: Invalidate specific session
+      description: Invalidates a specific session by ID.
+      parameters:
+        - in: path
+          name: sessionId
+          required: true
+          schema:
+            type: string
+          description: Session ID to invalidate
+      responses:
+        "200":
+          description: Session invalidated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        "401":
+          description: No active session.
+  /auth/reset:
+    post:
+      tags:
+        - auth
+      summary: Reset a user's password
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResetPasswordRequest'
+      responses:
+        "200":
+          description: Password reset successful.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        "400":
+          description: Validation error.
+  /user/addUser:
+    post:
+      tags:
+        - users
+      summary: Create a user (admin)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SignUpRegister'
+      responses:
+        "201":
+          description: User created.
+        "400":
+          description: Validation error.
+  /user/deleteUser/{username}:
+    post:
+      tags:
+        - users
+      summary: Delete a user by username
+      parameters:
+        - in: path
+          name: username
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: User deleted.
+        "404":
+          description: User not found.
+  /user/deleteAllUsers:
+    post:
+      tags:
+        - users
+      summary: Delete all users
+      responses:
+        "200":
+          description: All users deleted.
+  /user/getAllUsers:
+    get:
+      tags:
+        - users
+      summary: List all users
+      responses:
+        "200":
+          description: List of users.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/UserResponse'
+components:
+  schemas:
+    SignUpRegister:
+      type: object
+      required:
+        - username
+        - email
+        - password
+      properties:
+        username:
+          type: string
+          example: aikyn
+        email:
+          type: string
+          format: email
+          example: aikyn@mathalama.dev
+        password:
+          type: string
+          format: password
+          example: newPassword
+    SignInRequest:
+      type: object
+      required:
+        - login
+        - password
+      properties:
+        login:
+          type: string
+          description: Username or email.
+          example: aikyn
+        password:
+          type: string
+          format: password
+          example: password
+    ResetPasswordRequest:
+      type: object
+      required:
+        - login
+        - password
+      properties:
+        login:
+          type: string
+          description: Username or email.
+          example: aikyn
+        password:
+          type: string
+          format: password
+          example: newPassword
+    UserResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 1
+        email:
+          type: string
+          format: email
+          example: aikyn@mathalama.dev
+        username:
+          type: string
+          example: aikyn
+    SessionInfo:
+      type: object
+      properties:
+        sessionId:
+          type: string
+          description: Unique session identifier
+          example: "abc123def456"
+        userId:
+          type: integer
+          format: int64
+          description: User ID
+          example: 1
+        username:
+          type: string
+          description: Username
+          example: aikyn
+        email:
+          type: string
+          format: email
+          description: User email
+          example: aikyn@mathalama.dev
+        createdAt:
+          type: string
+          format: date-time
+          description: Session creation timestamp
+          example: "2026-01-16T10:30:00Z"
+        lastAccessedAt:
+          type: string
+          format: date-time
+          description: Last activity timestamp
+          example: "2026-01-16T11:45:00Z"
+        maxInactiveIntervalSeconds:
+          type: integer
+          description: Session timeout in seconds
+          example: 3600
+    MessageResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          example: "Operation completed successfully"

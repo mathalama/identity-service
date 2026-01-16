@@ -64,7 +64,6 @@ public class UserService {
         }
 
         return user;
-        // TODO: issue JWT token
     }
 
     ///  Get all users

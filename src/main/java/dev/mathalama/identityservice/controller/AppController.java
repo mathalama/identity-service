@@ -5,8 +5,8 @@ import org.springframework.web.bind.annotation.GetMapping;
 
 @Controller
 public class AppController {
-    @GetMapping("/info")
+    @GetMapping("/health")
     public String getInfo() {
-        return "Service is working.";
+        return "ok";
     }
 }
