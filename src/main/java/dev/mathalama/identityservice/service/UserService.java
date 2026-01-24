@@ -2,16 +2,22 @@ package dev.mathalama.identityservice.service;
 
 import dev.mathalama.identityservice.dto.*;
 import dev.mathalama.identityservice.entity.*;
+import dev.mathalama.identityservice.repository.RoleRepository;
 import dev.mathalama.identityservice.repository.UserRepository;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.security.core.userdetails.UserDetailsService;
+import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 import static org.springframework.http.HttpStatus.*;
 
@@ -19,18 +25,30 @@ import static org.springframework.http.HttpStatus.*;
 @Service
 @Transactional
 @RequiredArgsConstructor
-public class UserService {
+public class UserService implements UserDetailsService {
 
     private final UserRepository userRepository;
+    private final RoleRepository roleRepository;
     private final PasswordEncoder passwordEncoder;
+
+    @Override
+    public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
+        return userRepository.findByUsername(username)
+                .orElseThrow(() -> new UsernameNotFoundException("User not found: " + username));
+    }
 
     public void registerUsers(String username, String email, String password) {
         String encodePassword = passwordEncoder.encode(password);
+        
+        Role userRole = roleRepository.findByName("ROLE_USER")
+                .orElseThrow(() -> new ResponseStatusException(INTERNAL_SERVER_ERROR, "Default role not found"));
+        
         try {
             Users user = Users.builder()
                     .username(username)
                     .email(email)
                     .password(encodePassword)
+                    .roles(Set.of(userRole))
                     .build();
 
             userRepository.save(user);
@@ -109,5 +127,16 @@ public class UserService {
                         new ResponseStatusException(UNAUTHORIZED, "Invalid credentials")
                 );
         user.setPassword(passwordEncoder.encode(request.password()));
+    }
+    
+    public void assignRoleToUser(String username, String roleName) {
+        Users user = userRepository.findByUsername(username)
+                .orElseThrow(() -> new ResponseStatusException(NOT_FOUND, "User not found"));
+        Role role = roleRepository.findByName(roleName)
+                .orElseThrow(() -> new ResponseStatusException(NOT_FOUND, "Role not found"));
+        
+        user.getRoles().add(role);
+        userRepository.save(user);
+        log.info("Assigned role {} to user {}", roleName, username);
     }
 }
