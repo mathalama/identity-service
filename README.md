@@ -90,12 +90,36 @@ java -jar build/libs/identity-service-0.0.1-SNAPSHOT.jar
 
 Ensure that the required environment variables for the database and Redis connections are set before executing the command.
 
+### Docker Support
+
+To run the entire stack (Application, PostgreSQL, Redis) using Docker Compose:
+
+```bash
+docker-compose up -d --build
+```
+
+The application will be available at `http://localhost:8080`.
+
 ## API Documentation
 
 The application exposes interactive API documentation accessible via a web browser when the service is running.
 
 - **Swagger UI**: `http://localhost:8080/swagger-ui.html`
 - **OpenAPI JSON**: `http://localhost:8080/v3/api-docs`
+
+### Key Endpoints
+
+- **Authentication**:
+  - `POST /auth/signup`: Register a new user.
+  - `POST /auth/login`: Authenticate and create a session.
+  - `POST /auth/logout`: Invalidate the current session.
+  - `POST /auth/change-password`: Securely change password (requires login).
+
+- **User Management (Admin Only)**:
+  - `GET /user/all`: List all users.
+  - `POST /user/addUser`: Create a new user manually.
+  - `DELETE /user/{username}`: Delete a user.
+  - `POST /user/{username}/role`: Assign a role to a user.
 
 ## Database Migrations
 

@@ -1,6 +1,6 @@
 package dev.mathalama.identityservice.controller;
 
-import dev.mathalama.identityservice.dto.ResetPasswordRequest;
+import dev.mathalama.identityservice.dto.ChangePasswordRequest;
 import dev.mathalama.identityservice.dto.SessionInfo;
 import dev.mathalama.identityservice.dto.SignInRequest;
 import dev.mathalama.identityservice.dto.SignUpRegister;
@@ -94,7 +94,7 @@ public class AuthController {
         return ResponseEntity.ok(Map.of("message", "All sessions invalidated"));
     }
 
-    @DeleteMapping("/sessions/{sessionId}")
+    @PostMapping("/sessions/{sessionId}")
     public ResponseEntity<Map<String, String>> invalidateSession(
             @PathVariable String sessionId,
             HttpServletRequest request
@@ -106,9 +106,17 @@ public class AuthController {
         return ResponseEntity.ok(Map.of("message", "Session invalidated"));
     }
 
-    @PostMapping("/reset")
-    public ResponseEntity<Map<String, String>> resetPassword(@RequestBody ResetPasswordRequest request) {
-        userService.resetPassword(request);
-        return ResponseEntity.ok(Map.of("message", "Password reset successfully"));
+    @PostMapping("/change-password")
+    public ResponseEntity<Map<String, String>> changePassword(
+            @RequestBody ChangePasswordRequest request,
+            HttpServletRequest httpRequest
+    ) {
+        String username = sessionService.getCurrentUsername(httpRequest);
+        if (username == null) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "No active session");
+        }
+        
+        userService.changePassword(username, request.oldPassword(), request.newPassword());
+        return ResponseEntity.ok(Map.of("message", "Password changed successfully"));
     }
 }

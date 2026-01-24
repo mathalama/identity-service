@@ -118,15 +118,17 @@ public class UserService implements UserDetailsService {
     }
 
 
-    public void resetPassword(ResetPasswordRequest request) {
-        Users user = userRepository
-                .findByEmailIgnoreCaseOrUsernameIgnoreCase(
-                        request.login(), request.login()
-                )
-                .orElseThrow(() ->
-                        new ResponseStatusException(UNAUTHORIZED, "Invalid credentials")
-                );
-        user.setPassword(passwordEncoder.encode(request.password()));
+    public void changePassword(String username, String oldPassword, String newPassword) {
+        Users user = userRepository.findByUsername(username)
+                .orElseThrow(() -> new ResponseStatusException(NOT_FOUND, "User not found"));
+
+        if (!passwordEncoder.matches(oldPassword, user.getPassword())) {
+            throw new ResponseStatusException(BAD_REQUEST, "Invalid old password");
+        }
+
+        user.setPassword(passwordEncoder.encode(newPassword));
+        userRepository.save(user);
+        log.info("Password changed successfully for user: {}", username);
     }
     
     public void assignRoleToUser(String username, String roleName) {

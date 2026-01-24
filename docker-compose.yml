@@ -1,0 +1,46 @@
+services:
+  app:
+    build: .
+    container_name: identity-service
+    ports:
+      - "8080:8080"
+    environment:
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/identity_service_db
+      - SPRING_DATASOURCE_USERNAME=postgres
+      - SPRING_DATASOURCE_PASSWORD=postgres
+      - SPRING_DATA_REDIS_HOST=redis
+      - SPRING_DATA_REDIS_PORT=6379
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - identity-network
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: identity-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_DB=identity_service_db
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - identity-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: identity-redis
+    ports:
+      - "6379:6379"
+    networks:
+      - identity-network
+
+networks:
+  identity-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
