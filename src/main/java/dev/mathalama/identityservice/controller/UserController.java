@@ -33,7 +33,7 @@ public class UserController {
         userService.deleteUsers(username);
     }
 
-    @DeleteMapping("/all")
+    @DeleteMapping("/admin/delete-all")
     public void deleteAllUsers() {
         userService.deleteAllUsers();
     }
