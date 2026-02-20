@@ -1,10 +1,11 @@
 # Identity Service
 
-Identity Service is a robust and scalable authentication and user management system built with Spring Boot. It provides secure endpoints for user registration, authentication, session management, and role-based access control. Designed for high performance and reliability, this service leverages modern Java standards and industry-best practices for security and data integrity.
+Identity Service is a robust and scalable authentication and user management system built with Spring Boot. It provides secure endpoints for user registration, authentication, and role-based access control using JWT tokens. Designed for high performance and reliability with a microservices architecture.
 
 ![Build Status](https://img.shields.io/badge/build-passing-brightgreen)
-![Java](https://img.shields.io/badge/java-17-blue)
+![Java](https://img.shields.io/badge/java-21-blue)
 ![Spring Boot](https://img.shields.io/badge/spring--boot-4.0.1-green)
+![Auth](https://img.shields.io/badge/auth-JWT-orange)
 ![License](https://img.shields.io/badge/license-MIT-lightgrey)
 
 ## Table of Contents
@@ -16,24 +17,25 @@ Identity Service is a robust and scalable authentication and user management sys
 - [Building the Application](#building-the-application)
 - [Running the Application](#running-the-application)
 - [API Documentation](#api-documentation)
-- [Database Migrations](#database-migrations)
-- [Monitoring](#monitoring)
+- [Quick Start](#quick-start)
+- [Migration Info](#migration-info)
 
 ## Features
 
-- **User Authentication**: Secure login and logout functionality using Spring Security.
-- **Session Management**: Distributed session storage using Redis and Spring Session for horizontal scalability.
-- **User Management**: Endpoints for registering users, resetting passwords, and managing user profiles.
-- **API Documentation**: Interactive API documentation automatically generated via Swagger UI (OpenAPI 3).
-- **Database Migrations**: Version-controlled database schema changes managed by Flyway.
-- **Health Checks**: Application health and metrics monitoring via Spring Boot Actuator.
+- **JWT Authentication**: Secure stateless authentication using JSON Web Tokens.
+- **User Management**: Endpoints for registering users, changing passwords, and managing profiles.
+- **Microservices Ready**: Stateless architecture for horizontal scalability without session storage.
+- **Role-Based Access**: Support for role-based access control (RBAC).
+- **API Documentation**: Interactive API documentation via Swagger UI (OpenAPI 3).
+- **Database Migrations**: Version-controlled schema changes with Flyway.
+- **Health Checks**: Application health and metrics via Spring Boot Actuator.
 
 ## Technology Stack
 
 - **Core Framework**: Spring Boot 4.0.1
-- **Language**: Java 17
+- **Language**: Java 21
 - **Database**: PostgreSQL
-- **Caching & Session**: Redis (Spring Session Data Redis)
+- **Authentication**: JWT (JSON Web Tokens) with JJWT library
 - **Security**: Spring Security
 - **Migration**: Flyway
 - **Documentation**: SpringDoc OpenAPI (Swagger UI)
@@ -41,58 +43,80 @@ Identity Service is a robust and scalable authentication and user management sys
 
 ## Prerequisites
 
-Ensure the following software is installed on your deployment environment:
+Ensure the following software is installed:
 
-- Java Development Kit (JDK) 17 or higher
+- Java Development Kit (JDK) 21 or higher
 - PostgreSQL 13 or higher
-- Redis 6 or higher
+- Gradle 9.0 or higher (or use included gradlew)
 
 ## Configuration
 
-The application is configured using `src/main/resources/application.properties`. For production environments, it is recommended to override these settings using environment variables.
+The application is configured using `src/main/resources/application.properties`. For production, override with environment variables.
+
+### JWT Configuration
+
+| Property | Environment Variable | Description | Default |
+| :--- | :--- | :--- | :--- |
+| `jwt.secret` | `JWT_SECRET` | Secret key for signing tokens (min 32 chars) | `your-256-bit-secret-...` |
+| `jwt.expiration` | `JWT_EXPIRATION` | Token expiration time in milliseconds | `3600000` (1 hour) |
+
+### Database Configuration
 
 | Property | Environment Variable | Description |
 | :--- | :--- | :--- |
-| `spring.datasource.url` | `SPRING_DATASOURCE_URL` | JDBC URL for PostgreSQL |
+| `spring.datasource.url` | `SPRING_DATASOURCE_URL` | PostgreSQL JDBC URL |
 | `spring.datasource.username` | `SPRING_DATASOURCE_USERNAME` | Database username |
 | `spring.datasource.password` | `SPRING_DATASOURCE_PASSWORD` | Database password |
-| `spring.data.redis.host` | `SPRING_DATA_REDIS_HOST` | Redis server hostname |
-| `spring.data.redis.port` | `SPRING_DATA_REDIS_PORT` | Redis server port |
-| `spring.data.redis.password` | `SPRING_DATA_REDIS_PASSWORD` | Redis password (if applicable) |
+
+### ⚠️ Production Security
+
+Before deploying to production, generate a secure JWT secret:
+
+```bash
+openssl rand -base64 32
+```
+
+Then set it as an environment variable:
+
+```bash
+export JWT_SECRET="your-generated-key-here"
+```
 
 ## Building the Application
 
-To build the application and run tests, use the included Gradle wrapper:
+To build the application (without tests):
 
 ```bash
-./gradlew clean build
+./gradlew clean build -x test
 ```
 
-This command produces an executable JAR file in the `build/libs` directory.
+This produces an executable JAR in `build/libs/Identity-Service-0.0.1-SNAPSHOT.jar`
 
 ## Running the Application
 
 ### Local Development
 
-Ensure PostgreSQL and Redis are running locally on their default ports (or update `application.properties`), then run:
+Ensure PostgreSQL is running, then:
 
 ```bash
 ./gradlew bootRun
 ```
 
-### Production
-
-To run the application in a production environment using the built JAR file:
+### Production with Environment Variables
 
 ```bash
-java -jar build/libs/identity-service-0.0.1-SNAPSHOT.jar
-```
+export JWT_SECRET="your-secure-key"
+export JWT_EXPIRATION=3600000
+export SPRING_DATASOURCE_URL="jdbc:postgresql://localhost:5432/identity_service_db"
+export SPRING_DATASOURCE_USERNAME="postgres"
+export SPRING_DATASOURCE_PASSWORD="postgres"
 
-Ensure that the required environment variables for the database and Redis connections are set before executing the command.
+java -jar build/libs/Identity-Service-0.0.1-SNAPSHOT.jar
+```
 
 ### Docker Support
 
-To run the entire stack (Application, PostgreSQL, Redis) using Docker Compose:
+To run using Docker Compose:
 
 ```bash
 docker-compose up -d --build
@@ -102,35 +126,56 @@ The application will be available at `http://localhost:8080`.
 
 ## API Documentation
 
-The application exposes interactive API documentation accessible via a web browser when the service is running.
+The application exposes interactive API documentation via Swagger UI when running.
 
 - **Swagger UI**: `http://localhost:8080/swagger-ui.html`
 - **OpenAPI JSON**: `http://localhost:8080/v3/api-docs`
 
-### Key Endpoints
+### Key Endpoints (JWT-based)
 
-- **Authentication**:
-  - `POST /auth/signup`: Register a new user.
-  - `POST /auth/login`: Authenticate and create a session.
-  - `POST /auth/logout`: Invalidate the current session.
-  - `POST /auth/change-password`: Securely change password (requires login).
+**Authentication:**
+- `POST /auth/signup`: Register a new user
+- `POST /auth/login`: Authenticate and receive JWT token
+- `GET /auth/me`: Get current user (requires token)
+- `POST /auth/change-password`: Change password (requires token)
 
-- **User Management (Admin Only)**:
-  - `GET /user/all`: List all users.
-  - `POST /user/addUser`: Create a new user manually.
-  - `DELETE /user/{username}`: Delete a user.
-  - `POST /user/{username}/role`: Assign a role to a user.
+**User Management (Admin Only):**
+- `GET /user/all`: List all users
+- `POST /user/addUser`: Create a new user
+- `DELETE /user/{username}`: Delete a user
+- `POST /user/{username}/role`: Assign a role
+
+### Authentication Header
+
+All protected endpoints require the JWT token in the Authorization header:
+
+```
+Authorization: Bearer <jwt_token>
+```
+
+Example:
+```bash
+curl -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." http://localhost:8080/auth/me
+```
+
+## Quick Start
+
+For a quick start guide with examples, see [QUICK_START.md](QUICK_START.md)
+
+## Migration from Sessions to JWT
+
+This project has been migrated from session-based authentication (Redis) to stateless JWT tokens for microservices architecture. See [JWT_MIGRATION.md](JWT_MIGRATION.md) for detailed migration information and [JWT_USAGE_EXAMPLES.md](JWT_USAGE_EXAMPLES.md) for code examples.
 
 ## Database Migrations
 
-Database schema changes are handled automatically by Flyway on application startup.
+Database schema changes are managed by Flyway and applied automatically on startup.
 
-- **Location**: Migration scripts are located in `src/main/resources/db/migration`.
-- **Validation**: The application is configured to validate the applied migrations against the available classpath scripts to ensure integrity (`spring.jpa.hibernate.ddl-auto=validate`).
+- **Location**: `src/main/resources/db/migration`
+- **Validation**: The application validates applied migrations
 
 ## Monitoring
 
-Spring Boot Actuator is enabled to provide operational information about the running application.
+Spring Boot Actuator is enabled for operational monitoring.
 
 - **Health Check**: `http://localhost:8080/actuator/health`
 - **Info**: `http://localhost:8080/actuator/info`

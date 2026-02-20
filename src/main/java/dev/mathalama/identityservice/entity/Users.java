@@ -1,13 +1,13 @@
 package dev.mathalama.identityservice.entity;
 
+import dev.mathalama.identityservice.dto.enums.AccountState;
+import dev.mathalama.identityservice.dto.enums.SecurityStatus;
 import jakarta.persistence.*;
 import lombok.*;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
 
-import java.util.Collection;
-import java.util.HashSet;
-import java.util.Set;
+import java.util.*;
 
 @Entity
 @Getter
@@ -17,8 +17,8 @@ import java.util.Set;
 public class Users implements UserDetails {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    Long id;
+    @GeneratedValue(strategy = GenerationType.UUID)
+    UUID id;
 
     @Column(unique = true)
     String username;
@@ -35,6 +35,11 @@ public class Users implements UserDetails {
             inverseJoinColumns = @JoinColumn(name = "role_id")
     )
     private Set<Role> roles = new HashSet<>();
+
+    String permissions;
+    AccountState account_state;
+    SecurityStatus security_status;
+    Date created_at;
 
     private Users(UsersBuilder builder) {
         this.email = builder.email;

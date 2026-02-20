@@ -2,8 +2,10 @@ package dev.mathalama.identityservice.dto;
 
 import dev.mathalama.identityservice.entity.Users;
 
+import java.util.UUID;
+
 public record UserResponse(
-        Long id,
+        UUID id,
         String email,
         String username
 ) {

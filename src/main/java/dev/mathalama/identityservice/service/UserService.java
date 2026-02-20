@@ -2,6 +2,8 @@ package dev.mathalama.identityservice.service;
 
 import dev.mathalama.identityservice.dto.*;
 import dev.mathalama.identityservice.entity.*;
+import dev.mathalama.identityservice.exception.UserAlreadyExistException;
+import dev.mathalama.identityservice.exception.UserNotFoundException;
 import dev.mathalama.identityservice.repository.RoleRepository;
 import dev.mathalama.identityservice.repository.UserRepository;
 import jakarta.transaction.Transactional;
@@ -53,9 +55,7 @@ public class UserService implements UserDetailsService {
 
             userRepository.save(user);
         } catch (DataIntegrityViolationException ex) {
-            throw new ResponseStatusException(
-                    CONFLICT, "Username or email already exists"
-            );
+            throw new UserAlreadyExistException("Username or email already exists");
         }
     }
 
@@ -84,43 +84,9 @@ public class UserService implements UserDetailsService {
         return user;
     }
 
-    ///  Get all users
-    public List<UserResponse> getAllUsers() {
-        log.info("Fetching all users");
-
-        return userRepository.findAll()
-                .stream()
-                .map(UserResponse::from)
-                .toList();
-    }
-
-    /// delete which user
-    public void deleteUsers(String username) {
-        log.info("Deleting user");
-        if (userRepository.existsByUsername(username)) {
-            userRepository.deleteByUsername(username);
-        } else {
-            log.warn("Users not found");
-            throw new ResponseStatusException(NOT_FOUND,"User not found");
-        }
-    }
-
-    /// delete all users
-    public void deleteAllUsers() {
-        log.info("Deleting all users");
-        userRepository.deleteAll();
-        log.info("All users have been deleted");
-    }
-
-    /// Get total user count
-    public long userCount() {
-        return userRepository.count();
-    }
-
-
     public void changePassword(String username, String oldPassword, String newPassword) {
         Users user = userRepository.findByUsername(username)
-                .orElseThrow(() -> new ResponseStatusException(NOT_FOUND, "User not found"));
+                .orElseThrow(() -> new UserNotFoundException("User not found"));
 
         if (!passwordEncoder.matches(oldPassword, user.getPassword())) {
             throw new ResponseStatusException(BAD_REQUEST, "Invalid old password");
@@ -133,9 +99,9 @@ public class UserService implements UserDetailsService {
     
     public void assignRoleToUser(String username, String roleName) {
         Users user = userRepository.findByUsername(username)
-                .orElseThrow(() -> new ResponseStatusException(NOT_FOUND, "User not found"));
+                .orElseThrow(() -> new UserNotFoundException("User not found"));
         Role role = roleRepository.findByName(roleName)
-                .orElseThrow(() -> new ResponseStatusException(NOT_FOUND, "Role not found"));
+                .orElseThrow(() -> new UserNotFoundException("Role not found"));
         
         user.getRoles().add(role);
         userRepository.save(user);
