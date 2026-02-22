@@ -1,74 +1,161 @@
 openapi: 3.0.3
 info:
   title: Identity Service API
-  description: JWT-based authentication service for user sign-up and sign-in.
+  description: |
+    Микросервис аутентификации и авторизации.
+    
+    Выдаёт JWT токены (HMAC-SHA256) для API аутентификации.
+    Поддерживает OAuth2 Authorization Server (RSA-256) и OAuth2 Login (Google).
+    
+    ## Аутентификация
+    
+    1. Зарегистрируйтесь через `POST /auth/register`
+    2. Получите JWT через `POST /auth/authenticate`
+    3. Передавайте токен в заголовке: `Authorization: Bearer <jwt>`
   version: 1.0.0
+  contact:
+    name: Mathalama
+    url: https://mathalama.dev
+
 servers:
   - url: http://localhost:8080
     description: Local development
+
+tags:
+  - name: Auth
+    description: Регистрация и аутентификация
+  - name: OAuth2
+    description: OAuth2 Authorization Server эндпоинты
+
 paths:
-  /auth/signup:
+  /auth/register:
     post:
       tags:
-        - auth
-      summary: Register a new user
+        - Auth
+      summary: Регистрация нового пользователя
+      description: |
+        Создаёт пользователя с ролью `ROLE_USER`, состоянием `ACTIVE` и статусом `MFA_REQUIRED`.
+        Username и email должны быть уникальными.
+      operationId: register
       requestBody:
         required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/SignUpRegister'
+            example:
+              username: aikyn
+              email: aikyn@mathalama.dev
+              password: mySecurePassword123
       responses:
         "201":
-          description: User created.
+          description: Пользователь создан.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/MessageResponse'
+              example:
+                message: User registered successfully
         "409":
-          description: Username or email already exists.
+          description: Username или email уже существует.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+              example:
+                status: 409
+                error: Conflict
+                message: Username or email already exists
+                path: /auth/register
+                timestamp: "2026-02-22T12:00:00"
         "500":
-          description: Unexpected server error.
+          description: Внутренняя ошибка сервера.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-  /auth/signin:
+
+  /auth/authenticate:
     post:
       tags:
-        - auth
-      summary: Authenticate and issue JWT
-      description: Returns a bearer token with the user id stored in the JWT subject.
+        - Auth
+      summary: Аутентификация и получение JWT
+      description: |
+        Принимает username или email + пароль.
+        Возвращает JWT bearer токен с user ID в поле `sub` и ролями в `roles`.
+        
+        **Время жизни:** настраивается через `JWT_EXPIRATION` (мс).
+      operationId: authenticate
       requestBody:
         required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/SignInRequest'
+            examples:
+              byUsername:
+                summary: Вход по username
+                value:
+                  login: aikyn
+                  password: mySecurePassword123
+              byEmail:
+                summary: Вход по email
+                value:
+                  login: aikyn@mathalama.dev
+                  password: mySecurePassword123
       responses:
         "200":
-          description: Login successful.
+          description: Успешная аутентификация. Возвращает JWT токен.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/TokenResponse'
+              example:
+                token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI1NTBlODQwMC1lMjliLTQxZDQtYTcxNi00NDY2NTU0NDAwMDAiLCJyb2xlcyI6WyJST0xFX1VTRVIiXSwiaXNzIjoiSWRlbnRpdHkgU2VydmljZSIsImlhdCI6MTc0MDI0MDAwMCwiZXhwIjoxNzQwMjQzNjAwfQ.signature
         "401":
-          description: Invalid credentials.
+          description: Неверные учётные данные.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+              example:
+                status: 401
+                error: Unauthorized
+                message: Invalid credentials
+                path: /auth/authenticate
+                timestamp: "2026-02-22T12:00:00"
         "500":
-          description: Unexpected server error.
+          description: Внутренняя ошибка сервера.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+
+  /actuator/health:
+    get:
+      tags:
+        - Auth
+      summary: Health check
+      description: Проверка доступности сервиса.
+      operationId: healthCheck
+      responses:
+        "200":
+          description: Сервис работает.
+          content:
+            application/json:
+              example:
+                status: UP
+
 components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        JWT токен полученный через `POST /auth/authenticate`.
+        Передавайте в заголовке: `Authorization: Bearer <token>`
+
   schemas:
     SignUpRegister:
       type: object
@@ -79,6 +166,8 @@ components:
       properties:
         username:
           type: string
+          minLength: 2
+          maxLength: 255
           example: aikyn
         email:
           type: string
@@ -87,7 +176,9 @@ components:
         password:
           type: string
           format: password
-          example: newPassword
+          minLength: 6
+          example: mySecurePassword123
+
     SignInRequest:
       type: object
       required:
@@ -96,25 +187,66 @@ components:
       properties:
         login:
           type: string
-          description: Username or email.
+          description: Username или email.
           example: aikyn
         password:
           type: string
           format: password
-          example: password
+          example: mySecurePassword123
+
     TokenResponse:
       type: object
       properties:
         token:
           type: string
-          description: JWT bearer token.
+          description: JWT bearer токен. Содержит userId в `sub`, роли в `roles`.
           example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+
     MessageResponse:
       type: object
       properties:
         message:
           type: string
           example: User registered successfully
+
+    UserResponse:
+      type: object
+      description: Профиль пользователя (используется в защищённых эндпоинтах).
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: 550e8400-e29b-41d4-a716-446655440000
+        email:
+          type: string
+          format: email
+          example: aikyn@mathalama.dev
+        username:
+          type: string
+          example: aikyn
+        accountState:
+          type: string
+          enum:
+            - PENDING_VERIFICATION
+            - ACTIVE
+            - DISABLED
+            - DELETED
+          example: ACTIVE
+        securityStatus:
+          type: string
+          enum:
+            - OK
+            - LOCKED
+            - PASSWORD_EXPIRED
+            - MFA_REQUIRED
+          example: MFA_REQUIRED
+        roles:
+          type: array
+          items:
+            type: string
+          example:
+            - ROLE_USER
+
     ErrorResponse:
       type: object
       properties:
@@ -129,8 +261,11 @@ components:
           example: Username or email already exists
         path:
           type: string
-          example: /auth/signup
+          example: /auth/register
         timestamp:
           type: string
           format: date-time
-          example: "2026-02-20T12:00:00"
+          example: "2026-02-22T12:00:00"
+
+security:
+  - BearerAuth: []

@@ -8,7 +8,6 @@ import com.nimbusds.jose.proc.SecurityContext;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
-import org.springframework.http.MediaType;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -25,9 +24,7 @@ import org.springframework.security.oauth2.server.authorization.client.Registere
 import org.springframework.security.oauth2.server.authorization.settings.AuthorizationServerSettings;
 import org.springframework.security.oauth2.server.authorization.settings.ClientSettings;
 import org.springframework.security.web.SecurityFilterChain;
-import org.springframework.security.web.authentication.LoginUrlAuthenticationEntryPoint;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
-import org.springframework.security.web.util.matcher.MediaTypeRequestMatcher;
 
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
@@ -47,31 +44,9 @@ public class SecurityConfig {
         this.rsaKeyPair = generateRsaKeyPair();
     }
 
-    // 1. OAuth2 Authorization Server — эндпоинты /oauth2/**, /.well-known/**
+    // 1. API Security — /auth/**, /api/** — stateless JWT (Authorization Server filter chain is auto-configured by Spring Boot)
     @Bean
     @Order(1)
-    public SecurityFilterChain authorizationServerSecurityFilterChain(HttpSecurity http) throws Exception {
-        http
-                .oauth2AuthorizationServer(authorizationServer -> {
-                    http.securityMatcher(authorizationServer.getEndpointsMatcher());
-                    authorizationServer
-                            .oidc(Customizer.withDefaults());
-                })
-                .authorizeHttpRequests(authorize ->
-                        authorize.anyRequest().authenticated()
-                )
-                .exceptionHandling(exceptions -> exceptions
-                        .defaultAuthenticationEntryPointFor(
-                                new LoginUrlAuthenticationEntryPoint("/login"),
-                                new MediaTypeRequestMatcher(MediaType.TEXT_HTML)
-                        )
-                );
-        return http.build();
-    }
-
-    // 2. API Security — /auth/**, /api/** — stateless JWT
-    @Bean
-    @Order(2)
     public SecurityFilterChain apiSecurityFilterChain(HttpSecurity http) throws Exception {
         http
                 .securityMatcher("/auth/**", "/api/**", "/actuator/**")
@@ -88,9 +63,9 @@ public class SecurityConfig {
         return http.build();
     }
 
-    // 3. Default — OAuth2 Login + Form Login для всего остального
+    // 2. Default — OAuth2 Login + Form Login для всего остального
     @Bean
-    @Order(3)
+    @Order(2)
     public SecurityFilterChain defaultSecurityFilterChain(HttpSecurity http) throws Exception {
         http
                 .authorizeHttpRequests(authorize -> authorize
