@@ -36,10 +36,13 @@ public class Users implements UserDetails {
     )
     private Set<Role> roles = new HashSet<>();
 
+
     String permissions;
-    AccountState account_state;
-    SecurityStatus security_status;
-    Date created_at;
+    @Column(name = "account_state")
+    AccountState accountState;
+    @Column(name = "security_status")
+    SecurityStatus securityStatus;
+    Date createdAt;
 
     private Users(UsersBuilder builder) {
         this.email = builder.email;

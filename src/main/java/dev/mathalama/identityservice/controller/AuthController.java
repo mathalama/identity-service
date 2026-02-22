@@ -4,12 +4,10 @@ import dev.mathalama.identityservice.dto.SignInRequest;
 import dev.mathalama.identityservice.dto.SignUpRegister;
 import dev.mathalama.identityservice.entity.Users;
 import dev.mathalama.identityservice.service.JwtService;
-import dev.mathalama.identityservice.service.UserService;
+import dev.mathalama.identityservice.service.AuthService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.web.server.ResponseStatusException;
 
 import java.util.Map;
 
@@ -17,18 +15,18 @@ import java.util.Map;
 @RequestMapping("/auth")
 public class AuthController {
 
-    private final UserService userService;
+    private final AuthService authService;
     private final JwtService jwtService;
 
-    public AuthController(UserService userService, JwtService jwtService) {
-        this.userService = userService;
+    public AuthController(AuthService authService, JwtService jwtService) {
+        this.authService = authService;
         this.jwtService = jwtService;
     }
 
-    @PostMapping("/signup")
+    @PostMapping("/register")
     @ResponseStatus(HttpStatus.CREATED)
-    public Map<String, String> signUp(@RequestBody SignUpRegister request) {
-        userService.registerUsers(
+    public Map<String, String> register(@RequestBody SignUpRegister request) {
+        authService.register(
                 request.username(),
                 request.email(),
                 request.password()
@@ -36,9 +34,9 @@ public class AuthController {
         return Map.of("message", "User registered successfully");
     }
 
-    @PostMapping("/signin")
-    public ResponseEntity<Map<String, String>> signIn(@RequestBody SignInRequest request) {
-        Users user = userService.authenticate(request);
+    @PostMapping("/authenticate")
+    public ResponseEntity<Map<String, String>> authenticate(@RequestBody SignInRequest request) {
+        Users user = authService.authenticate(request);
         String token = jwtService.generateToken(user);
         return ResponseEntity.ok(Map.of("token", token));
     }

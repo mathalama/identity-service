@@ -1,110 +1,79 @@
 package dev.mathalama.identityservice.service;
 
-import dev.mathalama.identityservice.dto.*;
-import dev.mathalama.identityservice.entity.*;
-import dev.mathalama.identityservice.exception.UserAlreadyExistException;
+import dev.mathalama.identityservice.dto.UserResponse;
+import dev.mathalama.identityservice.dto.enums.AccountState;
+import dev.mathalama.identityservice.dto.enums.SecurityStatus;
+import dev.mathalama.identityservice.entity.Users;
 import dev.mathalama.identityservice.exception.UserNotFoundException;
 import dev.mathalama.identityservice.repository.RoleRepository;
 import dev.mathalama.identityservice.repository.UserRepository;
-import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.dao.DataIntegrityViolationException;
-import org.springframework.security.core.userdetails.UserDetails;
-import org.springframework.security.core.userdetails.UserDetailsService;
-import org.springframework.security.core.userdetails.UsernameNotFoundException;
-import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
-import org.springframework.web.server.ResponseStatusException;
+import org.springframework.transaction.annotation.Transactional;
 
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
+import java.util.UUID;
 
-import static org.springframework.http.HttpStatus.*;
-
-@Slf4j
 @Service
-@Transactional
 @RequiredArgsConstructor
-public class UserService implements UserDetailsService {
-
+public class UserService {
     private final UserRepository userRepository;
-    private final RoleRepository roleRepository;
-    private final PasswordEncoder passwordEncoder;
 
-    @Override
-    public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
+    // Retrieves a user by UUID and returns its DTO representation.
+    // Throws UserNotFoundException if the user does not exist.
+    @Transactional(readOnly = true)
+    public UserResponse getById(UUID id) {
+        return mapToResponse(findUserById(id));
+    }
+
+    // Retrieves a user by username and returns its DTO representation.
+    // Throws UserNotFoundException if no matching user is found.
+    @Transactional(readOnly = true)
+    public UserResponse getByUsername(String username) {
+        return mapToResponse(findUserByUsername(username));
+    }
+
+    // Returns the currently authenticated user as a DTO.
+    // Requires Authentication principal to be of type Users.
+    @Transactional(readOnly = true)
+    public UserResponse getCurrentUser() {
+        return mapToResponse(getCurrentAuthenticatedUser());
+    }
+
+    // Soft-deletes the currently authenticated user by updating account state
+    // and security status. Does not physically remove the record from the database.
+    @Transactional
+    public UserResponse deleteCurrentUser() {
+        Users user = getCurrentAuthenticatedUser();
+
+        user.setAccountState(AccountState.DELETED);
+        user.setSecurityStatus(SecurityStatus.LOCKED);
+
+        return mapToResponse(user);
+    }
+
+    // Extracts the authenticated Users entity from the SecurityContext.
+    // Assumes the Authentication principal is an instance of Users.
+    private Users getCurrentAuthenticatedUser() {
+        Authentication authentication =
+                SecurityContextHolder.getContext().getAuthentication();
+        return (Users) authentication.getPrincipal();
+    }
+    // Finds a user by UUID or throws UserNotFoundException.
+    private Users findUserById(UUID uuid) {
+        return userRepository.findById(uuid)
+                .orElseThrow(() -> new UserNotFoundException("User not found"));
+    }
+
+    // Finds a user by username or throws UserNotFoundException.
+    private Users findUserByUsername(String username){
         return userRepository.findByUsername(username)
-                .orElseThrow(() -> new UsernameNotFoundException("User not found: " + username));
-    }
-
-    public void registerUsers(String username, String email, String password) {
-        String encodePassword = passwordEncoder.encode(password);
-        
-        Role userRole = roleRepository.findByName("ROLE_USER")
-                .orElseThrow(() -> new ResponseStatusException(INTERNAL_SERVER_ERROR, "Default role not found"));
-        
-        try {
-            Users user = Users.builder()
-                    .username(username)
-                    .email(email)
-                    .password(encodePassword)
-                    .roles(Set.of(userRole))
-                    .build();
-
-            userRepository.save(user);
-        } catch (DataIntegrityViolationException ex) {
-            throw new UserAlreadyExistException("Username or email already exists");
-        }
-    }
-
-    public Users authenticate(SignInRequest request) {
-        Users user = userRepository
-                .findByEmailIgnoreCaseOrUsernameIgnoreCase(
-                        request.login(), request.login()
-                )
-                .orElseThrow(() ->
-                        new ResponseStatusException(
-                                UNAUTHORIZED,
-                                "Invalid email or password"
-                        )
-                );
-
-        if (!passwordEncoder.matches(
-                request.password(),
-                user.getPassword()
-        )) {
-            throw new ResponseStatusException(
-                    UNAUTHORIZED,
-                    "Invalid credentials"
-            );
-        }
-
-        return user;
-    }
-
-    public void changePassword(String username, String oldPassword, String newPassword) {
-        Users user = userRepository.findByUsername(username)
                 .orElseThrow(() -> new UserNotFoundException("User not found"));
-
-        if (!passwordEncoder.matches(oldPassword, user.getPassword())) {
-            throw new ResponseStatusException(BAD_REQUEST, "Invalid old password");
-        }
-
-        user.setPassword(passwordEncoder.encode(newPassword));
-        userRepository.save(user);
-        log.info("Password changed successfully for user: {}", username);
     }
-    
-    public void assignRoleToUser(String username, String roleName) {
-        Users user = userRepository.findByUsername(username)
-                .orElseThrow(() -> new UserNotFoundException("User not found"));
-        Role role = roleRepository.findByName(roleName)
-                .orElseThrow(() -> new UserNotFoundException("Role not found"));
-        
-        user.getRoles().add(role);
-        userRepository.save(user);
-        log.info("Assigned role {} to user {}", roleName, username);
+
+    // Maps a Users entity to its corresponding UserResponse DTO.
+    private UserResponse mapToResponse(Users user) {
+        return UserResponse.from(user);
     }
 }

@@ -20,7 +20,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
-class UserServiceTest {
+class AuthServiceTest {
 
     @Mock
     private UserRepository userRepository;
@@ -32,7 +32,7 @@ class UserServiceTest {
     private PasswordEncoder passwordEncoder;
 
     @InjectMocks
-    private UserService userService;
+    private AuthService authService;
 
     private Role userRole;
 
@@ -51,7 +51,7 @@ class UserServiceTest {
         when(roleRepository.findByName("ROLE_USER")).thenReturn(Optional.of(userRole));
         when(passwordEncoder.encode(password)).thenReturn("encodedPassword");
 
-        userService.registerUsers(username, email, password);
+        authService.register(username, email, password);
 
         verify(userRepository, times(1)).save(any(Users.class));
     }
@@ -72,7 +72,7 @@ class UserServiceTest {
         when(userRepository.findByUsername(username)).thenReturn(Optional.of(user));
         when(roleRepository.findByName(roleName)).thenReturn(Optional.of(adminRole));
 
-        userService.assignRoleToUser(username, roleName);
+        authService.assignRoleToUser(username, roleName);
 
         assertTrue(user.getRoles().contains(adminRole));
         verify(userRepository, times(1)).save(user);
