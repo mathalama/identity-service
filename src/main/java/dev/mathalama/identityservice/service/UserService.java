@@ -5,7 +5,6 @@ import dev.mathalama.identityservice.dto.enums.AccountState;
 import dev.mathalama.identityservice.dto.enums.SecurityStatus;
 import dev.mathalama.identityservice.entity.Users;
 import dev.mathalama.identityservice.exception.UserNotFoundException;
-import dev.mathalama.identityservice.repository.RoleRepository;
 import dev.mathalama.identityservice.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.Authentication;
@@ -54,11 +53,28 @@ public class UserService {
     }
 
     // Extracts the authenticated Users entity from the SecurityContext.
-    // Assumes the Authentication principal is an instance of Users.
+    // Now handles both Users principal (from JWT filter) and String principal (fallback).
     private Users getCurrentAuthenticatedUser() {
         Authentication authentication =
                 SecurityContextHolder.getContext().getAuthentication();
-        return (Users) authentication.getPrincipal();
+
+        if (authentication == null || !authentication.isAuthenticated()) {
+            throw new UserNotFoundException("No authenticated user found");
+        }
+
+        Object principal = authentication.getPrincipal();
+
+        if (principal instanceof Users user) {
+            return user;
+        }
+
+        // Fallback: если principal — строка (userId), загружаем из БД
+        if (principal instanceof String userId) {
+            return userRepository.findById(UUID.fromString(userId))
+                    .orElseThrow(() -> new UserNotFoundException("User not found"));
+        }
+
+        throw new UserNotFoundException("Unknown principal type");
     }
     // Finds a user by UUID or throws UserNotFoundException.
     private Users findUserById(UUID uuid) {
