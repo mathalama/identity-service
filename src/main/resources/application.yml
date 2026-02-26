@@ -2,6 +2,18 @@ spring:
   application:
     name: identity-service
 
+  redis:
+    host: ${REDIS_HOST:localhost}
+    port: ${REDIS_PORT:6379}
+    password: ${REDIS_PASSWORD:}
+    timeout: 2000
+    jedis:
+      pool:
+        max-active: 8
+        max-idle: 8
+        min-idle: 0
+        max-wait: -1ms
+
   security:
     user:
       name: ${SECURITY_USER}
@@ -48,3 +60,10 @@ jwt:
 
 frontend:
   url: ${FRONTEND_URL}
+
+app:
+  frontend:
+    url: ${FRONTEND_URL:http://localhost:3000}
+  verification:
+    token-expiry-minutes: 30
+    resend-cooldown-seconds: 60
