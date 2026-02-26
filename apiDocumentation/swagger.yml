@@ -2,16 +2,17 @@ openapi: 3.0.3
 info:
   title: Identity Service API
   description: |
-    Микросервис аутентификации и авторизации.
+    Authentication and authorization microservice.
     
-    Выдаёт JWT токены (HMAC-SHA256) для API аутентификации.
-    Поддерживает OAuth2 Authorization Server (RSA-256) и OAuth2 Login (Google).
+    Issues JWT tokens (HMAC-SHA256) for stateless API authentication.
+    Supports OAuth2 Authorization Server (RSA-256) and OAuth2 Login (Google).
     
-    ## Аутентификация
+    ## Authentication Flow
     
-    1. Зарегистрируйтесь через `POST /auth/register`
-    2. Получите JWT через `POST /auth/authenticate`
-    3. Передавайте токен в заголовке: `Authorization: Bearer <jwt>`
+    1. Register via `POST /auth/register`
+    2. Verify email via `POST /auth/verify-email`
+    3. Authenticate via `POST /auth/authenticate` to get JWT
+    4. Send JWT in header: `Authorization: Bearer <token>`
   version: 1.0.0
   contact:
     name: Mathalama
@@ -20,22 +21,28 @@ info:
 servers:
   - url: http://localhost:8080
     description: Local development
+  - url: https://identity.example.com
+    description: Production
 
 tags:
-  - name: Auth
-    description: Регистрация и аутентификация
+  - name: Authentication
+    description: User registration, verification, and login
   - name: OAuth2
-    description: OAuth2 Authorization Server эндпоинты
+    description: OAuth2 Authorization Server endpoints
+  - name: Health
+    description: Service health checks
 
 paths:
   /auth/register:
     post:
       tags:
-        - Auth
-      summary: Регистрация нового пользователя
+        - Authentication
+      summary: Register new user
       description: |
-        Создаёт пользователя с ролью `ROLE_USER`, состоянием `ACTIVE` и статусом `MFA_REQUIRED`.
-        Username и email должны быть уникальными.
+        Creates user with `ROLE_USER` role and `PENDING_VERIFICATION` state.
+        Username and email must be unique.
+        
+        User receives verification email with token link.
       operationId: register
       requestBody:
         required: true
@@ -44,20 +51,20 @@ paths:
             schema:
               $ref: '#/components/schemas/SignUpRegister'
             example:
-              username: aikyn
-              email: aikyn@mathalama.dev
-              password: mySecurePassword123
+              username: john_doe
+              email: john@example.com
+              password: SecurePassword123!
       responses:
         "201":
-          description: Пользователь создан.
+          description: User created successfully. Check email for verification link.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/MessageResponse'
               example:
-                message: User registered successfully
+                message: User registered successfully. Please check your email to verify your account.
         "409":
-          description: Username или email уже существует.
+          description: Username or email already exists.
           content:
             application/json:
               schema:
@@ -65,11 +72,105 @@ paths:
               example:
                 status: 409
                 error: Conflict
-                message: Username or email already exists
+                message: User already exists
                 path: /auth/register
-                timestamp: "2026-02-22T12:00:00"
+                timestamp: "2026-02-27T12:00:00Z"
         "500":
-          description: Внутренняя ошибка сервера.
+          description: Internal server error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /auth/verify-email:
+    post:
+      tags:
+        - Authentication
+      summary: Verify email address
+      description: |
+        Validates email verification token and activates user account.
+        
+        Token expires after 30 minutes and is one-time use only.
+      operationId: verifyEmail
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VerifyEmailRequest'
+            example:
+              token: 550e8400-e29b-41d4-a716-446655440000
+      responses:
+        "200":
+          description: Email verified successfully. Account is now active.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VerificationResponse'
+              example:
+                message: Email verified successfully
+                verified: true
+        "400":
+          description: Invalid or expired token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                status: 400
+                error: Bad Request
+                message: Invalid or expired verification token
+                path: /auth/verify-email
+                timestamp: "2026-02-27T12:00:00Z"
+        "404":
+          description: User not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /auth/resend-verification:
+    post:
+      tags:
+        - Authentication
+      summary: Resend verification email
+      description: |
+        Sends new verification email to user.
+        
+        Rate limited to once per 60 seconds to prevent abuse.
+      operationId: resendVerification
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResendVerificationRequest'
+            example:
+              email: john@example.com
+      responses:
+        "200":
+          description: Verification email sent successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VerificationResponse'
+              example:
+                message: Verification email sent successfully
+                verified: false
+        "429":
+          description: Rate limit exceeded. Wait 60 seconds before retrying.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                status: 429
+                error: Too Many Requests
+                message: Verification email was recently sent. Please wait before requesting another.
+                path: /auth/resend-verification
+                timestamp: "2026-02-27T12:00:00Z"
+        "404":
+          description: User or email not found.
           content:
             application/json:
               schema:
@@ -78,13 +179,16 @@ paths:
   /auth/authenticate:
     post:
       tags:
-        - Auth
-      summary: Аутентификация и получение JWT
+        - Authentication
+      summary: Authenticate and get JWT token
       description: |
-        Принимает username или email + пароль.
-        Возвращает JWT bearer токен с user ID в поле `sub` и ролями в `roles`.
+        Authenticates user with username/email and password.
         
-        **Время жизни:** настраивается через `JWT_EXPIRATION` (мс).
+        Returns JWT bearer token with user ID in `sub` and roles in `roles`.
+        
+        **User must be verified** (email_verified = true) to authenticate.
+        
+        **Token TTL:** Configured via `JWT_EXPIRATION` environment variable (milliseconds).
       operationId: authenticate
       requestBody:
         required: true
@@ -94,18 +198,18 @@ paths:
               $ref: '#/components/schemas/SignInRequest'
             examples:
               byUsername:
-                summary: Вход по username
+                summary: Login with username
                 value:
-                  login: aikyn
-                  password: mySecurePassword123
+                  login: john_doe
+                  password: SecurePassword123!
               byEmail:
-                summary: Вход по email
+                summary: Login with email
                 value:
-                  login: aikyn@mathalama.dev
-                  password: mySecurePassword123
+                  login: john@example.com
+                  password: SecurePassword123!
       responses:
         "200":
-          description: Успешная аутентификация. Возвращает JWT токен.
+          description: Authentication successful. Returns JWT token.
           content:
             application/json:
               schema:
@@ -113,7 +217,7 @@ paths:
               example:
                 token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI1NTBlODQwMC1lMjliLTQxZDQtYTcxNi00NDY2NTU0NDAwMDAiLCJyb2xlcyI6WyJST0xFX1VTRVIiXSwiaXNzIjoiSWRlbnRpdHkgU2VydmljZSIsImlhdCI6MTc0MDI0MDAwMCwiZXhwIjoxNzQwMjQzNjAwfQ.signature
         "401":
-          description: Неверные учётные данные.
+          description: Invalid credentials or email not verified.
           content:
             application/json:
               schema:
@@ -123,9 +227,9 @@ paths:
                 error: Unauthorized
                 message: Invalid credentials
                 path: /auth/authenticate
-                timestamp: "2026-02-22T12:00:00"
-        "500":
-          description: Внутренняя ошибка сервера.
+                timestamp: "2026-02-27T12:00:00Z"
+        "404":
+          description: User not found.
           content:
             application/json:
               schema:
@@ -134,17 +238,22 @@ paths:
   /actuator/health:
     get:
       tags:
-        - Auth
-      summary: Health check
-      description: Проверка доступности сервиса.
+        - Health
+      summary: Service health check
+      description: Returns service status and dependencies health.
       operationId: healthCheck
       responses:
         "200":
-          description: Сервис работает.
+          description: Service is running.
           content:
             application/json:
               example:
                 status: UP
+                components:
+                  db:
+                    status: UP
+                  redis:
+                    status: UP
 
 components:
   securitySchemes:
@@ -153,8 +262,8 @@ components:
       scheme: bearer
       bearerFormat: JWT
       description: |
-        JWT токен полученный через `POST /auth/authenticate`.
-        Передавайте в заголовке: `Authorization: Bearer <token>`
+        JWT token obtained from `POST /auth/authenticate`.
+        Send in header: `Authorization: Bearer <token>`
 
   schemas:
     SignUpRegister:
@@ -168,16 +277,19 @@ components:
           type: string
           minLength: 2
           maxLength: 255
-          example: aikyn
+          description: Unique username
+          example: john_doe
         email:
           type: string
           format: email
-          example: aikyn@mathalama.dev
+          description: Unique email address
+          example: john@example.com
         password:
           type: string
           format: password
           minLength: 6
-          example: mySecurePassword123
+          description: Strong password recommended
+          example: SecurePassword123!
 
     SignInRequest:
       type: object
@@ -187,20 +299,52 @@ components:
       properties:
         login:
           type: string
-          description: Username или email.
-          example: aikyn
+          description: Username or email
+          example: john_doe
         password:
           type: string
           format: password
-          example: mySecurePassword123
+          example: SecurePassword123!
+
+    VerifyEmailRequest:
+      type: object
+      required:
+        - token
+      properties:
+        token:
+          type: string
+          format: uuid
+          description: Email verification token from email link
+          example: 550e8400-e29b-41d4-a716-446655440000
+
+    ResendVerificationRequest:
+      type: object
+      required:
+        - email
+      properties:
+        email:
+          type: string
+          format: email
+          description: Email address to send verification to
+          example: john@example.com
 
     TokenResponse:
       type: object
       properties:
         token:
           type: string
-          description: JWT bearer токен. Содержит userId в `sub`, роли в `roles`.
+          description: JWT bearer token containing userId in `sub` and roles in `roles`
           example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+
+    VerificationResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          example: Email verified successfully
+        verified:
+          type: boolean
+          example: true
 
     MessageResponse:
       type: object
@@ -211,7 +355,7 @@ components:
 
     UserResponse:
       type: object
-      description: Профиль пользователя (используется в защищённых эндпоинтах).
+      description: User profile (returned from protected endpoints).
       properties:
         id:
           type: string
@@ -220,10 +364,10 @@ components:
         email:
           type: string
           format: email
-          example: aikyn@mathalama.dev
+          example: john@example.com
         username:
           type: string
-          example: aikyn
+          example: john_doe
         accountState:
           type: string
           enum:
@@ -232,40 +376,47 @@ components:
             - DISABLED
             - DELETED
           example: ACTIVE
+        emailVerified:
+          type: boolean
+          example: true
         securityStatus:
           type: string
           enum:
-            - OK
-            - LOCKED
-            - PASSWORD_EXPIRED
+            - PENDING
+            - VERIFIED
             - MFA_REQUIRED
-          example: MFA_REQUIRED
+            - MFA_VERIFIED
+          example: VERIFIED
         roles:
           type: array
           items:
             type: string
           example:
             - ROLE_USER
+        createdAt:
+          type: string
+          format: date-time
+          example: "2026-02-27T12:00:00Z"
 
     ErrorResponse:
       type: object
       properties:
         status:
           type: integer
-          example: 409
+          example: 400
         error:
           type: string
-          example: Conflict
+          example: Bad Request
         message:
           type: string
-          example: Username or email already exists
+          example: Invalid request
         path:
           type: string
-          example: /auth/register
+          example: /auth/verify-email
         timestamp:
           type: string
           format: date-time
-          example: "2026-02-22T12:00:00"
+          example: "2026-02-27T12:00:00Z"
 
 security:
   - BearerAuth: []
