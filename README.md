@@ -20,7 +20,7 @@
 
 ---
 
-Issues **JWT tokens**, serves as an **OAuth2 Authorization Server**, and supports **OAuth2 Login** with third-party providers like Google — all backed by **PostgreSQL** and **Redis**.
+Issues **JWT access & refresh tokens**, serves as an **OAuth2 Authorization Server**, and supports **OAuth2 Login** with third-party providers like Google - all backed by **PostgreSQL** and **Redis**.
 
 [Getting Started](#quick-start) · [API Reference](#api-endpoints) · [Architecture](#architecture) · [Deployment](#deployment)
 
@@ -39,6 +39,7 @@ Issues **JWT tokens**, serves as an **OAuth2 Authorization Server**, and support
 - [API Endpoints](#api-endpoints)
 - [Usage Examples](#usage-examples)
 - [JWT Token Structure](#jwt-token-structure)
+- [Token Lifecycle](#token-lifecycle)
 - [Email Verification Flow](#email-verification-flow)
 - [Database Schema](#database-schema)
 - [Project Structure](#project-structure-clean-architecture)
@@ -57,13 +58,15 @@ Issues **JWT tokens**, serves as an **OAuth2 Authorization Server**, and support
 
 | Feature | Description |
 |:--------|:-----------|
-| **JWT Authentication** | Stateless HMAC-SHA256 Bearer tokens |
+| **JWT Access + Refresh Tokens** | Short-lived access token + long-lived refresh token with automatic rotation |
+| **Token Blacklisting** | Instant access token revocation via Redis blacklist on logout |
 | **OAuth2 Authorization Server** | Full OIDC support with RSA-256 signing |
 | **OAuth2 Login** | Third-party authentication (Google and more) |
 | **User Management** | Registration, authentication, email / username login |
 | **Role-Based Access Control** | Multi-tier permissions — `USER`, `ADMIN`, `SUPER_ADMIN` |
 | **Email Verification** | Token-based verification with Redis storage (30 min TTL) |
 | **Resend Cooldown** | Rate-limited email resend (60 sec throttle) |
+| **Logout & Revocation** | `POST /auth/logout` blacklists access token and revokes refresh token |
 | **Clean Architecture** | Domain → Application → Infrastructure → Presentation |
 | **Async Email** | Non-blocking sending via Spring `TaskExecutor` |
 | **Automatic Migrations** | Flyway-managed schema versioning |
@@ -102,10 +105,11 @@ Issues **JWT tokens**, serves as an **OAuth2 Authorization Server**, and support
 │ Microservices │─────▶│                                              │
 │   (Backend)   │      │  ② JWT API — Stateless                      │
 └───────────────┘      │     /auth/**  /api/**                        │
-                       │     Bearer token validation (HMAC-SHA256)    │
-┌───────────────┐      │                                              │
-│ Google OAuth2 │◀────▶│  ③ OAuth2 Login + Form Login                │
-└───────────────┘      │     Session-based fallback auth              │
+                       │     Access + Refresh tokens (HMAC-SHA256)    │
+┌───────────────┐      │     Redis token blacklist & refresh store    │
+│ Google OAuth2 │◀────▶│                                              │
+└───────────────┘      │  ③ OAuth2 Login + Form Login                │
+                       │     Session-based fallback auth              │
                        └──────────────┬───────────────────────────────┘
                                       │
                           ┌───────────┴───────────┐
@@ -113,8 +117,10 @@ Issues **JWT tokens**, serves as an **OAuth2 Authorization Server**, and support
                     ┌─────┴─────┐          ┌──────┴──────┐
                     │PostgreSQL │          │    Redis     │
                     │   15      │          │      7       │
-                    │Users,Roles│          │Tokens,Cooldn │
-                    └───────────┘          └─────────────┘
+                    │Users,Roles│          │Refresh tokens│
+                    └───────────┘          │Access blackl.│
+                                           │Verify tokens│
+                                           └─────────────┘
 ```
 
 The service exposes **three security filter chains** ordered by priority:
@@ -155,7 +161,8 @@ POSTGRES_USER=postgres
 POSTGRES_PASSWORD=secure_password
 
 JWT_SECRET=generate-with-openssl-rand-base64-32
-JWT_EXPIRATION=3600000
+JWT_EXPIRATION=900000
+JWT_REFRESH_EXPIRATION=604800000
 
 FRONTEND_URL=http://localhost:3000
 BASE_URL=http://localhost:8080
@@ -201,7 +208,8 @@ docker compose up -d --build
 | `POSTGRES_USER` | ✅ | — | PostgreSQL username |
 | `POSTGRES_PASSWORD` | ✅ | — | PostgreSQL password |
 | `JWT_SECRET` | ✅ | — | HMAC key for JWT signing (min 32 chars) |
-| `JWT_EXPIRATION` | ✅ | — | Token lifetime in **milliseconds** (e.g. `3600000` = 1 h) |
+| `JWT_EXPIRATION` | ✅ | — | Access token lifetime in **ms** (e.g. `900000` = 15 min) |
+| `JWT_REFRESH_EXPIRATION` | — | `604800000` | Refresh token lifetime in **ms** (default 7 days) |
 | `FRONTEND_URL` | ✅ | — | CORS allowed origin |
 | `BASE_URL` | ✅ | — | OAuth2 AS issuer URL |
 | `REDIS_HOST` | — | `localhost` | Redis hostname |
@@ -221,14 +229,17 @@ docker compose up -d --build
 | Method | Endpoint | Description | Body |
 |:------:|:---------|:------------|:-----|
 | `POST` | `/auth/register` | Register new user | `{ username, email, password }` |
-| `POST` | `/auth/authenticate` | Login → JWT | `{ login, password }` |
+| `POST` | `/auth/authenticate` | Login → access + refresh tokens | `{ login, password }` |
+| `POST` | `/auth/refresh` | Refresh token pair (rotation) | `{ refreshToken }` |
 | `POST` | `/auth/verify-email` | Verify email token | `{ token }` |
 | `POST` | `/auth/resend-verification` | Resend verification | `{ email }` |
 
-### Protected (Require `Authorization: Bearer <jwt>`)
+### Protected (Require `Authorization: Bearer <accessToken>`)
 
 | Method | Endpoint | Description |
 |:------:|:---------|:------------|
+| `POST` | `/auth/logout` | Revoke refresh token + blacklist access token |
+| `POST` | `/auth/reset-password` | Change password |
 | `*` | `/api/**` | Application-specific endpoints |
 
 ### OAuth2 Authorization Server
@@ -281,7 +292,7 @@ curl -X POST http://localhost:8080/auth/register \
 </details>
 
 <details>
-<summary><b>Authenticate & get JWT</b></summary>
+<summary><b>Authenticate & get tokens</b></summary>
 
 ```bash
 curl -X POST http://localhost:8080/auth/authenticate \
@@ -295,8 +306,46 @@ curl -X POST http://localhost:8080/auth/authenticate \
 ```json
 // 200 OK
 {
-  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+  "accessToken": "eyJhbGciOiJIUzI1NiJ9.eyJ0eXBlIjoiYWNjZXNzIiwic3ViIjoiNTUw...",
+  "refreshToken": "eyJhbGciOiJIUzI1NiJ9.eyJ0eXBlIjoicmVmcmVzaCIsInN1YiI6IjU1MC..."
 }
+```
+
+</details>
+
+<details>
+<summary><b>Refresh tokens</b></summary>
+
+```bash
+curl -X POST http://localhost:8080/auth/refresh \
+  -H "Content-Type: application/json" \
+  -d '{
+    "refreshToken": "eyJhbGciOiJIUzI1NiJ9.eyJ0eXBlIjoicmVmcmVzaCIs..."
+  }'
+```
+
+```json
+// 200 OK — old refresh token is revoked, new pair issued
+{
+  "accessToken": "eyJhbGciOiJIUzI1NiJ9.eyJ0eXBlIjoiYWNjZXNzIiw...",
+  "refreshToken": "eyJhbGciOiJIUzI1NiJ9.eyJ0eXBlIjoicmVmcmVzaCIs..."
+}
+```
+
+</details>
+
+<details>
+<summary><b>Logout (revoke all tokens)</b></summary>
+
+```bash
+curl -X POST http://localhost:8080/auth/logout \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiJ9..."
+```
+
+```
+// 204 No Content
+// Access token is blacklisted in Redis (TTL = remaining lifetime)
+// Refresh token is deleted from Redis
 ```
 
 </details>
@@ -348,7 +397,7 @@ curl -X POST http://localhost:8080/auth/resend-verification \
 
 ```bash
 curl http://localhost:8080/api/some-endpoint \
-  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiJ9..."
 ```
 
 </details>
@@ -357,25 +406,94 @@ curl http://localhost:8080/api/some-endpoint \
 
 ## JWT Token Structure
 
+### Access Token
+
 ```json
 {
+  "type": "access",
   "sub": "550e8400-e29b-41d4-a716-446655440000",
   "roles": ["ROLE_USER"],
   "iss": "Identity Service",
   "iat": 1740240000,
-  "exp": 1740243600,
+  "exp": 1740240900,
   "jti": "unique-token-identifier"
+}
+```
+
+### Refresh Token
+
+```json
+{
+  "type": "refresh",
+  "sub": "550e8400-e29b-41d4-a716-446655440000",
+  "iss": "Identity Service",
+  "iat": 1740240000,
+  "exp": 1740844800,
+  "jti": "unique-refresh-token-id"
 }
 ```
 
 | Claim | Description |
 |:------|:-----------|
+| `type` | Token type: `access` or `refresh` |
 | `sub` | User UUID |
-| `roles` | Granted authorities |
+| `roles` | Granted authorities (access token only) |
 | `iss` | Issuer identifier |
 | `iat` | Issued-at (Unix epoch) |
 | `exp` | Expiration (Unix epoch) |
-| `jti` | Unique token ID |
+| `jti` | Unique token ID (used for blacklisting & refresh validation) |
+
+---
+
+## Token Lifecycle
+
+```
+ ┌──────────┐          ┌──────────────┐          ┌───────┐
+ │  Client  │          │Identity Svc  │          │ Redis │
+ └────┬─────┘          └──────┬───────┘          └───┬───┘
+      │                       │                      │
+      │  POST /authenticate   │                      │
+      │──────────────────────▶│                      │
+      │                       │  Generate access     │
+      │                       │  Generate refresh    │
+      │                       │── store jti ────────▶│ SET refresh:token:{userId} (7d)
+      │◁── { accessToken,     │                      │
+      │      refreshToken } ──│                      │
+      │                       │                      │
+      │  GET /api/** (Bearer) │                      │
+      │──────────────────────▶│  validate signature  │
+      │                       │  check type=access   │
+      │                       │── check blacklist ──▶│ EXISTS blacklist:access:{jti}
+      │                       │◁── false ───────────│
+      │◁── 200 OK ───────────│                      │
+      │                       │                      │
+      ┆  (access token expired)                      │
+      │                       │                      │
+      │  POST /auth/refresh   │                      │
+      │──────────────────────▶│  parse refresh token │
+      │                       │── validate jti ────▶│ GET refresh:token:{userId}
+      │                       │◁── matches ────────│
+      │                       │── DEL old refresh ─▶│
+      │                       │  Generate new pair   │
+      │                       │── store new jti ───▶│ SET refresh:token:{userId} (7d)
+      │◁── { accessToken,     │                      │
+      │      refreshToken } ──│                      │
+      │                       │                      │
+      │  POST /auth/logout    │                      │
+      │  (Bearer: access)     │                      │
+      │──────────────────────▶│── blacklist access ─▶│ SET blacklist:access:{jti} (remaining TTL)
+      │                       │── DEL refresh ─────▶│ DEL refresh:token:{userId}
+      │◁── 204 No Content ───│                      │
+```
+
+### Redis Key Schema
+
+| Key Pattern | Value | TTL | Purpose |
+|:------------|:------|:----|:--------|
+| `refresh:token:{userId}` | Refresh token `jti` | 7 days | Refresh token validation & rotation |
+| `blacklist:access:{jti}` | `"revoked"` | Remaining access token lifetime | Instant access token revocation |
+| `verify:token:{hash}` | User UUID | 30 min | Email verification |
+| `verify:cooldown:{userId}` | Timestamp | 60 sec | Resend rate limiting |
 
 ---
 
@@ -498,9 +616,12 @@ src/main/java/dev/mathalama/identityservice/
 │
 ├── application/                         ← Use cases & DTOs
 │   ├── dto/
+│   │   ├── AuthResponse.java             Access + refresh token pair
+│   │   ├── RefreshTokenRequest.java       Refresh token request
 │   │   ├── SignUpRegister.java            Registration request
 │   │   ├── SignInRequest.java             Login request
 │   │   ├── UserResponse.java             User data response
+│   │   ├── ResetPasswordRequest.java      Password reset request
 │   │   ├── VerifyEmailRequest.java        Email verification request
 │   │   ├── ResendVerificationRequest.java Resend request
 │   │   ├── VerificationResponse.java      Verification status
@@ -509,8 +630,8 @@ src/main/java/dev/mathalama/identityservice/
 │   └── service/
 │       ├── AuthService.java               Interface — auth use cases
 │       ├── EmailService.java              Interface — email sending
-│       ├── JwtService.java                Interface — JWT ops
-│       ├── VerificationTokenService.java  Interface — token mgmt
+│       ├── JwtService.java                Interface — JWT & token ops
+│       ├── VerificationTokenService.java  Interface — verification token mgmt
 │       └── impl/
 │           └── AuthServiceImpl.java       Core auth logic
 │
@@ -520,11 +641,11 @@ src/main/java/dev/mathalama/identityservice/
 │   │   └── RoleRepository.java            Spring Data JPA
 │   ├── service/
 │   │   ├── EmailServiceImpl.java          Async email via TaskExecutor
-│   │   ├── JwtServiceImpl.java            JWT generation & validation
-│   │   └── VerificationTokenRedisService  Redis token storage
+│   │   ├── JwtServiceImpl.java            JWT gen/validation, refresh store, blacklist
+│   │   └── VerificationTokenRedisService  Redis verification token storage
 │   └── config/
 │       ├── SecurityConfig.java            3 ordered filter chains
-│       ├── JwtAuthenticationFilter.java   Bearer → SecurityContext
+│       ├── JwtAuthenticationFilter.java   Bearer → SecurityContext (+ blacklist check)
 │       ├── AsyncConfig.java               Thread pool config
 │       ├── RedisConfig.java               Redis connection & serialization
 │       ├── PasswordConfig.java            BCryptPasswordEncoder
@@ -550,9 +671,22 @@ src/main/java/dev/mathalama/identityservice/
 ### JWT Token Security
 
 - Signed with **HMAC-SHA256** (`JWT_SECRET`)
-- Configurable expiration (default 1 hour)
+- **Access token**: short-lived (default 15 min), carries user roles
+- **Refresh token**: long-lived (default 7 days), stored in Redis by `jti`
+- **Refresh token rotation**: each use invalidates the old token and issues a new pair
+- **Access token blacklisting**: on logout, access token `jti` is added to Redis with TTL = remaining lifetime
 - Payload: user UUID + roles — **no** sensitive data
 - Validated on every request by `JwtAuthenticationFilter`
+
+### Token Revocation Strategy
+
+| Scenario | What Happens |
+|:---------|:-------------|
+| **Logout** | Access token blacklisted + refresh token deleted from Redis |
+| **Refresh** | Old refresh token deleted, new pair issued (rotation) |
+| **Reuse attack** | If an already-used refresh token is presented, all tokens for that user are revoked |
+| **Access token expires** | Naturally removed — no Redis cleanup needed |
+| **Blacklist entry expires** | Redis auto-deletes when access token would have expired anyway |
 
 ### Email Verification Tokens
 
@@ -569,6 +703,8 @@ HTTP Request
         ├── Extract Bearer token from Authorization header
         ├── Validate HMAC-SHA256 signature
         ├── Assert token not expired
+        ├── Assert type = "access"
+        ├── Check Redis blacklist (blacklist:access:{jti})
         ├── Parse user UUID + roles
         ├── Load User entity from DB
         └── Populate SecurityContext
@@ -597,6 +733,7 @@ spring:
 jwt:
   secret: ${JWT_SECRET}
   expiration: ${JWT_EXPIRATION}
+  refresh-expiration: ${JWT_REFRESH_EXPIRATION:604800000}
 
 app:
   frontend:
@@ -666,7 +803,8 @@ openssl rand -base64 32
 
 # Required env vars
 JWT_SECRET=<generated_above>
-JWT_EXPIRATION=3600000
+JWT_EXPIRATION=900000
+JWT_REFRESH_EXPIRATION=604800000
 FRONTEND_URL=https://yourdomain.com
 BASE_URL=https://api.yourdomain.com
 POSTGRES_PASSWORD=<strong_password>
@@ -678,6 +816,8 @@ REDIS_PASSWORD=<strong_password>
 - [ ] Rotate `JWT_SECRET` periodically
 - [ ] Set `spring.jpa.show-sql=false`
 - [ ] Enable Prometheus metrics scraping (`/actuator/prometheus`)
+- [ ] Set short access token TTL (`JWT_EXPIRATION=900000` = 15 min)
+- [ ] Monitor Redis memory usage (blacklist entries auto-expire)
 
 ---
 
@@ -709,6 +849,9 @@ curl http://localhost:8080/actuator/health
 | Problem | Solution |
 |:--------|:--------|
 | _JWT claims string is empty_ | Ensure header is `Authorization: Bearer <token>` (note the space) |
+| _Token is not an access token_ | You're sending a refresh token to an API endpoint — use the access token |
+| _Access token has been revoked_ | User has logged out — re-authenticate or use refresh token first |
+| _Refresh token has been revoked or is invalid_ | Refresh token was already used (rotation) or user logged out — re-authenticate |
 | _User not found_ | Verify user exists and email is verified (`account_state = ACTIVE`) |
 | _Verification email was recently sent_ | Wait 60 seconds before resending |
 | _Invalid token_ | Token expired (30 min window) or already used |

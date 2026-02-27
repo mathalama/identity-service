@@ -74,7 +74,7 @@ public class EmailServiceImpl implements EmailService {
                             <p>Or copy and paste this link in your browser:</p>
                             <p style="word-break: break-all; color: #007bff;">%s</p>
                             <div class="token-warning">
-                                <strong>⏱️ This link expires in 30 minutes.</strong>
+                                <strong>This link expires in 30 minutes.</strong>
                             </div>
                             <p>If you didn't sign up for this account, please ignore this email.</p>
                         </div>

@@ -3,6 +3,7 @@ package dev.mathalama.identityservice.application.service.impl;
 import dev.mathalama.identityservice.application.dto.*;
 import dev.mathalama.identityservice.application.service.AuthService;
 import dev.mathalama.identityservice.application.service.EmailService;
+import dev.mathalama.identityservice.application.service.JwtService;
 import dev.mathalama.identityservice.application.service.VerificationTokenService;
 import dev.mathalama.identityservice.domain.entity.Role;
 import dev.mathalama.identityservice.domain.entity.Users;
@@ -40,6 +41,7 @@ public class AuthServiceImpl implements AuthService {
     private final PasswordEncoder passwordEncoder;
     private final VerificationTokenService verificationTokenService;
     private final EmailService emailService;
+    private final JwtService jwtService;
 
     @Override
     public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
@@ -100,7 +102,44 @@ public class AuthServiceImpl implements AuthService {
     }
 
     @Override
-    public void changeCurrentPassword(String username, String oldPassword, String newPassword) {
+    public AuthResponse refreshToken(String refreshToken) {
+        // Parse the refresh token to get userId and tokenId
+        String userId = jwtService.getUserIdFromToken(refreshToken);
+        String tokenId = jwtService.getTokenId(refreshToken);
+
+        if (userId == null || tokenId == null) {
+            throw new UnauthorizedException("Invalid refresh token");
+        }
+
+        // Validate that this refresh token is the one we issued (stored in Redis)
+        if (!jwtService.validateRefreshToken(userId, tokenId)) {
+            // Possible token reuse attack — revoke all refresh tokens for this user
+            jwtService.revokeRefreshToken(userId);
+            throw new UnauthorizedException("Refresh token has been revoked or is invalid");
+        }
+
+        // Load user
+        Users user = userRepository.findById(UUID.fromString(userId))
+                .orElseThrow(() -> new UserNotFoundException("User not found"));
+
+        // Rotate: revoke old refresh token, issue new pair
+        jwtService.revokeRefreshToken(userId);
+        String newAccessToken = jwtService.generateAccessToken(user);
+        String newRefreshToken = jwtService.generateRefreshToken(user);
+
+        log.info("Tokens refreshed for user: {}", user.getUsername());
+        return new AuthResponse(newAccessToken, newRefreshToken);
+    }
+
+    @Override
+    public void logout(String userId, String accessToken) {
+        jwtService.revokeRefreshToken(userId);
+        jwtService.blacklistAccessToken(accessToken);
+        log.info("User logged out, tokens revoked for userId: {}", userId);
+    }
+
+    @Override
+    public void resetPassword(String username, String oldPassword, String newPassword) {
         Users user = userRepository.findByUsername(username)
                 .orElseThrow(() -> new UserNotFoundException("User not found"));
 

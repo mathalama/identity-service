@@ -4,15 +4,24 @@ info:
   description: |
     Authentication and authorization microservice.
     
-    Issues JWT tokens (HMAC-SHA256) for stateless API authentication.
+    Issues JWT access & refresh tokens (HMAC-SHA256) for stateless API authentication.
     Supports OAuth2 Authorization Server (RSA-256) and OAuth2 Login (Google).
     
     ## Authentication Flow
     
     1. Register via `POST /auth/register`
     2. Verify email via `POST /auth/verify-email`
-    3. Authenticate via `POST /auth/authenticate` to get JWT
-    4. Send JWT in header: `Authorization: Bearer <token>`
+    3. Authenticate via `POST /auth/authenticate` to get access + refresh tokens
+    4. Send access token in header: `Authorization: Bearer <accessToken>`
+    5. When access token expires, refresh via `POST /auth/refresh`
+    6. Logout via `POST /auth/logout` to revoke all tokens
+    
+    ## Token Lifecycle
+    
+    | Token | TTL | Storage | Revocation |
+    |-------|-----|---------|------------|
+    | Access | ~15 min (`JWT_EXPIRATION`) | Client only | Blacklisted in Redis on logout |
+    | Refresh | ~7 days (`JWT_REFRESH_EXPIRATION`) | Redis (`refresh:token:{userId}`) | Deleted on logout or rotation |
   version: 1.0.0
   contact:
     name: Mathalama
@@ -26,7 +35,7 @@ servers:
 
 tags:
   - name: Authentication
-    description: User registration, verification, and login
+    description: User registration, verification, login, token refresh, and logout
   - name: OAuth2
     description: OAuth2 Authorization Server endpoints
   - name: Health
@@ -157,15 +166,15 @@ paths:
               example:
                 message: Verification email sent successfully
                 verified: false
-        "429":
-          description: Rate limit exceeded. Wait 60 seconds before retrying.
+        "400":
+          description: Rate limit exceeded or account already verified.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
               example:
-                status: 429
-                error: Too Many Requests
+                status: 400
+                error: Bad Request
                 message: Verification email was recently sent. Please wait before requesting another.
                 path: /auth/resend-verification
                 timestamp: "2026-02-27T12:00:00Z"
@@ -180,15 +189,19 @@ paths:
     post:
       tags:
         - Authentication
-      summary: Authenticate and get JWT token
+      summary: Authenticate and get token pair
       description: |
         Authenticates user with username/email and password.
         
-        Returns JWT bearer token with user ID in `sub` and roles in `roles`.
+        Returns a **short-lived access token** and a **long-lived refresh token**.
         
-        **User must be verified** (email_verified = true) to authenticate.
+        - **Access token** (`type: access`): contains user ID and roles. Send in `Authorization: Bearer` header for API requests.
+        - **Refresh token** (`type: refresh`): used only at `POST /auth/refresh` to obtain a new token pair.
         
-        **Token TTL:** Configured via `JWT_EXPIRATION` environment variable (milliseconds).
+        The refresh token `jti` is stored in Redis for validation and rotation.
+        
+        **Access token TTL:** `JWT_EXPIRATION` (milliseconds).  
+        **Refresh token TTL:** `JWT_REFRESH_EXPIRATION` (default 7 days).
       operationId: authenticate
       requestBody:
         required: true
@@ -209,13 +222,14 @@ paths:
                   password: SecurePassword123!
       responses:
         "200":
-          description: Authentication successful. Returns JWT token.
+          description: Authentication successful. Returns access + refresh token pair.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/TokenResponse'
+                $ref: '#/components/schemas/AuthResponse'
               example:
-                token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI1NTBlODQwMC1lMjliLTQxZDQtYTcxNi00NDY2NTU0NDAwMDAiLCJyb2xlcyI6WyJST0xFX1VTRVIiXSwiaXNzIjoiSWRlbnRpdHkgU2VydmljZSIsImlhdCI6MTc0MDI0MDAwMCwiZXhwIjoxNzQwMjQzNjAwfQ.signature
+                accessToken: eyJhbGciOiJIUzI1NiJ9.eyJ0eXBlIjoiYWNjZXNzIiwicm9sZXMiOlsiUk9MRV9VU0VSIl0sInN1YiI6IjU1MGU4NDAwLWUyOWItNDFkNC1hNzE2LTQ0NjY1NTQ0MDAwMCIsImlzcyI6IklkZW50aXR5IFNlcnZpY2UiLCJpYXQiOjE3NDAyNDAwMDAsImV4cCI6MTc0MDI0MDkwMH0.signature
+                refreshToken: eyJhbGciOiJIUzI1NiJ9.eyJ0eXBlIjoicmVmcmVzaCIsInN1YiI6IjU1MGU4NDAwLWUyOWItNDFkNC1hNzE2LTQ0NjY1NTQ0MDAwMCIsImlzcyI6IklkZW50aXR5IFNlcnZpY2UiLCJpYXQiOjE3NDAyNDAwMDAsImV4cCI6MTc0MDg0NDgwMH0.signature
         "401":
           description: Invalid credentials or email not verified.
           content:
@@ -227,6 +241,140 @@ paths:
                 error: Unauthorized
                 message: Invalid credentials
                 path: /auth/authenticate
+                timestamp: "2026-02-27T12:00:00Z"
+        "404":
+          description: User not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /auth/refresh:
+    post:
+      tags:
+        - Authentication
+      summary: Refresh token pair
+      description: |
+        Exchanges a valid refresh token for a **new access + refresh token pair**.
+        
+        **Refresh Token Rotation:** the old refresh token is immediately revoked in Redis
+        and a new one is issued. This limits the window of a stolen refresh token.
+        
+        If the submitted refresh token has already been used (replay/reuse attack),
+        **all tokens for that user are revoked** and the request is rejected.
+        
+        This endpoint is **public** (no `Authorization` header needed) — the refresh token
+        in the request body is sufficient for authentication.
+      operationId: refreshToken
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshTokenRequest'
+            example:
+              refreshToken: eyJhbGciOiJIUzI1NiJ9.eyJ0eXBlIjoicmVmcmVzaCIs...
+      responses:
+        "200":
+          description: New token pair issued. Old refresh token is revoked.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+              example:
+                accessToken: eyJhbGciOiJIUzI1NiJ9.eyJ0eXBlIjoiYWNjZXNzIiw...
+                refreshToken: eyJhbGciOiJIUzI1NiJ9.eyJ0eXBlIjoicmVmcmVzaCIs...
+        "401":
+          description: Refresh token is invalid, expired, or has been revoked.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                status: 401
+                error: Unauthorized
+                message: Refresh token has been revoked or is invalid
+                path: /auth/refresh
+                timestamp: "2026-02-27T12:00:00Z"
+        "404":
+          description: User not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /auth/logout:
+    post:
+      tags:
+        - Authentication
+      summary: Logout and revoke tokens
+      description: |
+        Logs the user out by performing two actions:
+        
+        1. **Blacklists the current access token** in Redis (`blacklist:access:{jti}`)
+           with TTL equal to the token's remaining lifetime. Any subsequent request
+           with this access token will be rejected by `JwtAuthenticationFilter`.
+        
+        2. **Deletes the refresh token** from Redis (`refresh:token:{userId}`),
+           preventing future token refreshes.
+        
+        Requires a valid access token in the `Authorization` header.
+      operationId: logout
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: Authorization
+          in: header
+          required: true
+          schema:
+            type: string
+          description: "Bearer access token. Example: `Bearer eyJhbGciOiJIUzI1NiJ9...`"
+      responses:
+        "204":
+          description: Successfully logged out. Access token blacklisted, refresh token revoked.
+        "401":
+          description: Missing or invalid access token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /auth/reset-password:
+    post:
+      tags:
+        - Authentication
+      summary: Reset password
+      description: |
+        Changes the user's password. Requires the current (old) password for verification.
+        
+        Requires a valid access token in the `Authorization` header.
+      operationId: resetPassword
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResetPasswordRequest'
+            example:
+              username: john_doe
+              oldPassword: OldPassword123!
+              newPassword: NewSecurePassword456!
+      responses:
+        "204":
+          description: Password changed successfully.
+        "400":
+          description: Invalid old password.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                status: 400
+                error: Bad Request
+                message: Invalid old password
+                path: /auth/reset-password
                 timestamp: "2026-02-27T12:00:00Z"
         "404":
           description: User not found.
@@ -262,8 +410,11 @@ components:
       scheme: bearer
       bearerFormat: JWT
       description: |
-        JWT token obtained from `POST /auth/authenticate`.
-        Send in header: `Authorization: Bearer <token>`
+        JWT **access token** obtained from `POST /auth/authenticate` or `POST /auth/refresh`.
+        
+        Send in header: `Authorization: Bearer <accessToken>`
+        
+        The access token contains `"type": "access"` — refresh tokens are rejected by API endpoints.
 
   schemas:
     SignUpRegister:
@@ -306,6 +457,16 @@ components:
           format: password
           example: SecurePassword123!
 
+    RefreshTokenRequest:
+      type: object
+      required:
+        - refreshToken
+      properties:
+        refreshToken:
+          type: string
+          description: Refresh token from the last authentication or refresh response
+          example: eyJhbGciOiJIUzI1NiJ9.eyJ0eXBlIjoicmVmcmVzaCIs...
+
     VerifyEmailRequest:
       type: object
       required:
@@ -328,13 +489,44 @@ components:
           description: Email address to send verification to
           example: john@example.com
 
-    TokenResponse:
+    ResetPasswordRequest:
       type: object
+      required:
+        - username
+        - oldPassword
+        - newPassword
       properties:
-        token:
+        username:
           type: string
-          description: JWT bearer token containing userId in `sub` and roles in `roles`
-          example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+          description: Username of the account
+          example: john_doe
+        oldPassword:
+          type: string
+          format: password
+          description: Current password
+          example: OldPassword123!
+        newPassword:
+          type: string
+          format: password
+          description: New password
+          example: NewSecurePassword456!
+
+    AuthResponse:
+      type: object
+      description: Token pair returned on successful authentication or refresh.
+      properties:
+        accessToken:
+          type: string
+          description: |
+            Short-lived JWT access token (`type: access`). Contains user ID (`sub`) and roles.
+            Send in `Authorization: Bearer <accessToken>` for API requests.
+          example: eyJhbGciOiJIUzI1NiJ9.eyJ0eXBlIjoiYWNjZXNzIiw...
+        refreshToken:
+          type: string
+          description: |
+            Long-lived JWT refresh token (`type: refresh`). Use at `POST /auth/refresh`
+            to obtain a new token pair. Do NOT send as Bearer token to API endpoints.
+          example: eyJhbGciOiJIUzI1NiJ9.eyJ0eXBlIjoicmVmcmVzaCIs...
 
     VerificationResponse:
       type: object
@@ -394,6 +586,27 @@ components:
           example:
             - ROLE_USER
         createdAt:
+          type: string
+          format: date-time
+          example: "2026-02-27T12:00:00Z"
+
+    ErrorResponse:
+      type: object
+      description: Standard error envelope returned on 4xx/5xx responses.
+      properties:
+        status:
+          type: integer
+          example: 401
+        error:
+          type: string
+          example: Unauthorized
+        message:
+          type: string
+          example: Invalid credentials
+        path:
+          type: string
+          example: /auth/authenticate
+        timestamp:
           type: string
           format: date-time
           example: "2026-02-27T12:00:00Z"
