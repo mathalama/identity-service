@@ -16,6 +16,11 @@ info:
     5. When access token expires, refresh via `POST /auth/refresh`
     6. Logout via `POST /auth/logout` to revoke all tokens
     
+    ## Forgot Password Flow
+    
+    1. Request reset email via `POST /auth/forgot-password`
+    2. Set new password via `POST /auth/reset-forgotten-password`
+    
     ## Token Lifecycle
     
     | Token | TTL | Storage | Revocation |
@@ -343,7 +348,7 @@ paths:
     post:
       tags:
         - Authentication
-      summary: Reset password
+      summary: Reset password (authenticated)
       description: |
         Changes the user's password. Requires the current (old) password for verification.
         
@@ -375,6 +380,96 @@ paths:
                 error: Bad Request
                 message: Invalid old password
                 path: /auth/reset-password
+                timestamp: "2026-02-27T12:00:00Z"
+        "404":
+          description: User not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /auth/forgot-password:
+    post:
+      tags:
+        - Authentication
+      summary: Request password reset email
+      description: |
+        Sends a password-reset email containing a time-limited token.
+        
+        - The token is **SHA-256 hashed** and stored in Redis with a **30-minute TTL**.
+        - Rate-limited to **one request per 60 seconds** per user.
+        - Always returns `200 OK` regardless of whether the email exists (prevents enumeration).
+        
+        This endpoint is **public** — no `Authorization` header required.
+      operationId: forgotPassword
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ForgotPasswordRequest'
+            example:
+              email: john@example.com
+      responses:
+        "200":
+          description: Password reset email sent (if account exists).
+          content:
+            application/json:
+              example:
+                message: "If the email exists, a password reset link has been sent."
+        "400":
+          description: Rate limit exceeded (60 sec cooldown) or validation error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                status: 400
+                error: Bad Request
+                message: Password reset email was recently sent. Please wait before requesting another.
+                path: /auth/forgot-password
+                timestamp: "2026-02-27T12:00:00Z"
+
+  /auth/reset-forgotten-password:
+    post:
+      tags:
+        - Authentication
+      summary: Set new password via reset token
+      description: |
+        Validates the password-reset token from the email link and sets a new password.
+        
+        - Token is one-time use and deleted after success.
+        - All refresh tokens for the user are revoked (forces re-login).
+        
+        This endpoint is **public** — no `Authorization` header required.
+      operationId: resetForgottenPassword
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NewPasswordRequest'
+            example:
+              token: 550e8400-e29b-41d4-a716-446655440000
+              newPassword: NewSecurePassword456!
+      responses:
+        "200":
+          description: Password reset successfully. User should log in with the new password.
+          content:
+            application/json:
+              example:
+                message: "Password has been reset successfully. Please log in with your new password."
+        "400":
+          description: Invalid or expired token, or validation error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                status: 400
+                error: Bad Request
+                message: Invalid or expired password reset token
+                path: /auth/reset-forgotten-password
                 timestamp: "2026-02-27T12:00:00Z"
         "404":
           description: User not found.
@@ -426,9 +521,10 @@ components:
       properties:
         username:
           type: string
-          minLength: 2
-          maxLength: 255
-          description: Unique username
+          minLength: 3
+          maxLength: 50
+          pattern: "^[a-zA-Z0-9_]+$"
+          description: "Unique username (letters, digits, underscores only)"
           example: john_doe
         email:
           type: string
@@ -438,8 +534,9 @@ components:
         password:
           type: string
           format: password
-          minLength: 6
-          description: Strong password recommended
+          minLength: 8
+          maxLength: 128
+          description: Password (8-128 characters)
           example: SecurePassword123!
 
     SignInRequest:
@@ -508,7 +605,38 @@ components:
         newPassword:
           type: string
           format: password
-          description: New password
+          minLength: 8
+          maxLength: 128
+          description: New password (8-128 characters)
+          example: NewSecurePassword456!
+
+    ForgotPasswordRequest:
+      type: object
+      required:
+        - email
+      properties:
+        email:
+          type: string
+          format: email
+          description: Email address of the account to reset
+          example: john@example.com
+
+    NewPasswordRequest:
+      type: object
+      required:
+        - token
+        - newPassword
+      properties:
+        token:
+          type: string
+          description: Password reset token from email link
+          example: 550e8400-e29b-41d4-a716-446655440000
+        newPassword:
+          type: string
+          format: password
+          minLength: 8
+          maxLength: 128
+          description: New password (8-128 characters)
           example: NewSecurePassword456!
 
     AuthResponse:
@@ -606,26 +734,6 @@ components:
         path:
           type: string
           example: /auth/authenticate
-        timestamp:
-          type: string
-          format: date-time
-          example: "2026-02-27T12:00:00Z"
-
-    ErrorResponse:
-      type: object
-      properties:
-        status:
-          type: integer
-          example: 400
-        error:
-          type: string
-          example: Bad Request
-        message:
-          type: string
-          example: Invalid request
-        path:
-          type: string
-          example: /auth/verify-email
         timestamp:
           type: string
           format: date-time

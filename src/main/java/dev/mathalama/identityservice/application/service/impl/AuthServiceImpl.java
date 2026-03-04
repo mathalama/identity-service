@@ -221,4 +221,53 @@ public class AuthServiceImpl implements AuthService {
 
         return new VerificationResponse("Verification email sent successfully", false);
     }
+
+    @Override
+    public void forgotPassword(String email) {
+        Users user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new UserNotFoundException("User not found"));
+
+        if (user.getAccountState() != AccountState.ACTIVE) {
+            throw new ResponseStatusException(BAD_REQUEST, "Account is not active");
+        }
+
+        if (!verificationTokenService.canResendToken(user)) {
+            throw new ResponseStatusException(BAD_REQUEST, "Password reset email was recently sent. Please wait before requesting another.");
+        }
+
+        // Reuse verification token infrastructure for password reset
+        String resetToken = verificationTokenService.generateVerificationToken(user);
+        user.setLastVerificationSentAt(new Date());
+        userRepository.save(user);
+
+        emailService.sendPasswordResetEmail(email, user.getUsername(), resetToken);
+        log.info("Password reset email sent to user: {}", user.getUsername());
+    }
+
+    @Override
+    public void resetForgottenPassword(String token, String newPassword) {
+        if (!verificationTokenService.verifyToken(token)) {
+            throw new UnauthorizedException("Invalid or expired password reset token");
+        }
+
+        String userIdStr = verificationTokenService.getUserIdByToken(token);
+        if (userIdStr == null) {
+            throw new UserNotFoundException("Token not found or expired");
+        }
+
+        UUID userId = UUID.fromString(userIdStr);
+        Users user = userRepository.findById(userId)
+                .orElseThrow(() -> new UserNotFoundException("User not found"));
+
+        user.setPassword(passwordEncoder.encode(newPassword));
+        userRepository.save(user);
+
+        // Invalidate the token
+        verificationTokenService.markTokenAsUsed(token);
+
+        // Revoke all existing tokens for security
+        jwtService.revokeRefreshToken(userId.toString());
+
+        log.info("Password reset successfully for user: {}", user.getUsername());
+    }
 }

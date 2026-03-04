@@ -4,6 +4,7 @@ import dev.mathalama.identityservice.application.dto.*;
 import dev.mathalama.identityservice.application.service.AuthService;
 import dev.mathalama.identityservice.application.service.JwtService;
 import dev.mathalama.identityservice.domain.entity.Users;
+import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
@@ -26,7 +27,7 @@ public class AuthController {
 
     @PostMapping("/register")
     @ResponseStatus(HttpStatus.CREATED)
-    public Map<String, String> register(@RequestBody SignUpRegister request) {
+    public Map<String, String> register(@Valid @RequestBody SignUpRegister request) {
         authService.register(
                 request.username(),
                 request.email(),
@@ -36,7 +37,7 @@ public class AuthController {
     }
 
     @PostMapping("/authenticate")
-    public ResponseEntity<AuthResponse> authenticate(@RequestBody SignInRequest request) {
+    public ResponseEntity<AuthResponse> authenticate(@Valid @RequestBody SignInRequest request) {
         Users user = authService.authenticate(request);
         String accessToken = jwtService.generateAccessToken(user);
         String refreshToken = jwtService.generateRefreshToken(user);
@@ -44,7 +45,7 @@ public class AuthController {
     }
 
     @PostMapping("/refresh")
-    public ResponseEntity<AuthResponse> refreshToken(@RequestBody RefreshTokenRequest request) {
+    public ResponseEntity<AuthResponse> refreshToken(@Valid @RequestBody RefreshTokenRequest request) {
         AuthResponse response = authService.refreshToken(request.refreshToken());
         return ResponseEntity.ok(response);
     }
@@ -60,19 +61,19 @@ public class AuthController {
     }
 
     @PostMapping("/verify-email")
-    public ResponseEntity<VerificationResponse> verifyEmail(@RequestBody VerifyEmailRequest request) {
+    public ResponseEntity<VerificationResponse> verifyEmail(@Valid @RequestBody VerifyEmailRequest request) {
         VerificationResponse response = authService.verifyEmail(request.token());
         return ResponseEntity.ok(response);
     }
 
     @PostMapping("/resend-verification")
-    public ResponseEntity<VerificationResponse> resendVerification(@RequestBody ResendVerificationRequest request) {
+    public ResponseEntity<VerificationResponse> resendVerification(@Valid @RequestBody ResendVerificationRequest request) {
         VerificationResponse response = authService.resendVerificationEmail(request.email());
         return ResponseEntity.ok(response);
     }
 
     @PostMapping("/reset-password")
-    public ResponseEntity<Void> resetPassword(@RequestBody ResetPasswordRequest request) {
+    public ResponseEntity<Void> resetPassword(@Valid @RequestBody ResetPasswordRequest request) {
 
         authService.resetPassword(
                 request.username(),
@@ -81,5 +82,17 @@ public class AuthController {
         );
 
         return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/forgot-password")
+    public ResponseEntity<Map<String, String>> forgotPassword(@Valid @RequestBody ForgotPasswordRequest request) {
+        authService.forgotPassword(request.email());
+        return ResponseEntity.ok(Map.of("message", "If the email exists, a password reset link has been sent."));
+    }
+
+    @PostMapping("/reset-forgotten-password")
+    public ResponseEntity<Map<String, String>> resetForgottenPassword(@Valid @RequestBody NewPasswordRequest request) {
+        authService.resetForgottenPassword(request.token(), request.newPassword());
+        return ResponseEntity.ok(Map.of("message", "Password has been reset successfully. Please log in with your new password."));
     }
 }

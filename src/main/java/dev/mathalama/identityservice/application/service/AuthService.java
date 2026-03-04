@@ -15,4 +15,6 @@ public interface AuthService {
     void assignRoleToUser(String username, String roleName);
     VerificationResponse verifyEmail(String token);
     VerificationResponse resendVerificationEmail(String email);
+    void forgotPassword(String email);
+    void resetForgottenPassword(String token, String newPassword);
 }

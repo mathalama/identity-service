@@ -41,6 +41,8 @@ Issues **JWT access & refresh tokens**, serves as an **OAuth2 Authorization Serv
 - [JWT Token Structure](#jwt-token-structure)
 - [Token Lifecycle](#token-lifecycle)
 - [Email Verification Flow](#email-verification-flow)
+- [Forgot Password Flow](#forgot-password-flow)
+- [Input Validation](#input-validation)
 - [Database Schema](#database-schema)
 - [Project Structure](#project-structure-clean-architecture)
 - [Security](#security)
@@ -66,7 +68,9 @@ Issues **JWT access & refresh tokens**, serves as an **OAuth2 Authorization Serv
 | **Role-Based Access Control** | Multi-tier permissions — `USER`, `ADMIN`, `SUPER_ADMIN` |
 | **Email Verification** | Token-based verification with Redis storage (30 min TTL) |
 | **Resend Cooldown** | Rate-limited email resend (60 sec throttle) |
+| **Forgot Password** | Email-based password reset with time-limited Redis token |
 | **Logout & Revocation** | `POST /auth/logout` blacklists access token and revokes refresh token |
+| **Input Validation** | Jakarta Bean Validation on all DTOs (`@NotBlank`, `@Email`, `@Size`, `@Pattern`) |
 | **Clean Architecture** | Domain → Application → Infrastructure → Presentation |
 | **Async Email** | Non-blocking sending via Spring `TaskExecutor` |
 | **Automatic Migrations** | Flyway-managed schema versioning |
@@ -233,6 +237,8 @@ docker compose up -d --build
 | `POST` | `/auth/refresh` | Refresh token pair (rotation) | `{ refreshToken }` |
 | `POST` | `/auth/verify-email` | Verify email token | `{ token }` |
 | `POST` | `/auth/resend-verification` | Resend verification | `{ email }` |
+| `POST` | `/auth/forgot-password` | Request password reset email | `{ email }` |
+| `POST` | `/auth/reset-forgotten-password` | Set new password via reset token | `{ token, newPassword }` |
 
 ### Protected (Require `Authorization: Bearer <accessToken>`)
 
@@ -393,6 +399,47 @@ curl -X POST http://localhost:8080/auth/resend-verification \
 </details>
 
 <details>
+<summary><b>Forgot password</b></summary>
+
+```bash
+curl -X POST http://localhost:8080/auth/forgot-password \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "john@example.com"
+  }'
+```
+
+```json
+// 200 OK
+{
+  "message": "If the email exists, a password reset link has been sent."
+}
+```
+
+</details>
+
+<details>
+<summary><b>Reset forgotten password</b></summary>
+
+```bash
+curl -X POST http://localhost:8080/auth/reset-forgotten-password \
+  -H "Content-Type: application/json" \
+  -d '{
+    "token": "550e8400-e29b-41d4-a716-446655440000",
+    "newPassword": "NewSecurePassword456!"
+  }'
+```
+
+```json
+// 200 OK
+{
+  "message": "Password has been reset successfully. Please log in with your new password."
+}
+```
+
+</details>
+
+<details>
 <summary><b>Call a protected endpoint</b></summary>
 
 ```bash
@@ -494,6 +541,8 @@ curl http://localhost:8080/api/some-endpoint \
 | `blacklist:access:{jti}` | `"revoked"` | Remaining access token lifetime | Instant access token revocation |
 | `verify:token:{hash}` | User UUID | 30 min | Email verification |
 | `verify:cooldown:{userId}` | Timestamp | 60 sec | Resend rate limiting |
+| `reset:token:{hash}` | User UUID | 30 min | Password reset token |
+| `reset:cooldown:{userId}` | Timestamp | 60 sec | Password reset rate limiting |
 
 ---
 
@@ -527,6 +576,63 @@ curl http://localhost:8080/api/some-endpoint \
       │                       │  Send email (async)    │
       │◁─── 200 Sent ────────│                        │
 ```
+
+---
+
+## Forgot Password Flow
+
+```
+ ┌──────────┐          ┌──────────────┐          ┌───────┐
+ │  Client  │          │Identity Svc  │          │ Redis │
+ └────┬─────┘          └──────┬───────┘          └───┬───┘
+      │  POST /auth/          │                      │
+      │  forgot-password      │                      │
+      │──────────────────────▶│  Lookup user by email │
+      │                       │  Check cooldown (60s) │
+      │                       │──── GET cooldown ───▶│
+      │                       │  Generate UUID token  │
+      │                       │──── SHA-256 hash ───▶│ SETEX (30 min)
+      │                       │  Send email (async)   │
+      │◁─── 200 OK ──────────│                       │
+      │                       │                       │
+      │  POST /auth/          │                       │
+      │  reset-forgotten-pwd  │                       │
+      │──────────────────────▶│  Hash incoming token  │
+      │                       │──── GET ────────────▶│
+      │                       │◁─── user_id ─────────│
+      │                       │  Set new password     │
+      │                       │  (BCrypt)             │
+      │                       │──── DEL token ──────▶│
+      │                       │  Revoke refresh token │
+      │                       │──── DEL refresh ────▶│
+      │◁─── 200 OK ──────────│                       │
+```
+
+---
+
+## Input Validation
+
+All request DTOs are validated with **Jakarta Bean Validation** (`spring-boot-starter-validation`). Requests failing validation receive a `400 Bad Request` response.
+
+| DTO | Field | Constraints |
+|:----|:------|:------------|
+| `SignUpRegister` | `username` | `@NotBlank`, `@Size(3..50)`, `@Pattern(^[a-zA-Z0-9_]+$)` |
+| | `email` | `@NotBlank`, `@Email` |
+| | `password` | `@NotBlank`, `@Size(8..128)` |
+| `SignInRequest` | `login` | `@NotBlank` |
+| | `password` | `@NotBlank` |
+| `RefreshTokenRequest` | `refreshToken` | `@NotBlank` |
+| `ResetPasswordRequest` | `username` | `@NotBlank` |
+| | `oldPassword` | `@NotBlank` |
+| | `newPassword` | `@NotBlank`, `@Size(8..128)` |
+| `ForgotPasswordRequest` | `email` | `@NotBlank`, `@Email` |
+| `NewPasswordRequest` | `token` | `@NotBlank` |
+| | `newPassword` | `@NotBlank`, `@Size(8..128)` |
+| `VerifyEmailRequest` | `token` | `@NotBlank` |
+| `ResendVerificationRequest` | `email` | `@NotBlank`, `@Email` |
+| `UpdateRequest` | `username` | `@NotBlank`, `@Size(3..50)` |
+| | `email` | `@NotBlank`, `@Email` |
+| | `password` | `@NotBlank`, `@Size(8..128)` |
 
 ---
 
@@ -618,10 +724,12 @@ src/main/java/dev/mathalama/identityservice/
 │   ├── dto/
 │   │   ├── AuthResponse.java             Access + refresh token pair
 │   │   ├── RefreshTokenRequest.java       Refresh token request
+│   │   ├── ForgotPasswordRequest.java     Forgot password request
+│   │   ├── NewPasswordRequest.java        Password reset via token
 │   │   ├── SignUpRegister.java            Registration request
 │   │   ├── SignInRequest.java             Login request
 │   │   ├── UserResponse.java             User data response
-│   │   ├── ResetPasswordRequest.java      Password reset request
+│   │   ├── ResetPasswordRequest.java      Password change (authenticated)
 │   │   ├── VerifyEmailRequest.java        Email verification request
 │   │   ├── ResendVerificationRequest.java Resend request
 │   │   ├── VerificationResponse.java      Verification status
@@ -694,7 +802,23 @@ src/main/java/dev/mathalama/identityservice/
 - **SHA-256** hashed before storage — raw token only exists in the email link
 - **30-minute** TTL, one-time use, deleted after verification
 - Resend rate-limited to **60 seconds**
+### Password Reset Tokens
 
+- Same Redis-based flow as email verification
+- **SHA-256** hashed, **30-minute** TTL, one-time use
+- On successful reset all refresh tokens are revoked (forces re-login)
+- Rate-limited to **60 seconds** between requests
+
+### Account State Enforcement
+
+| `AccountState` | `isEnabled()` | `isAccountNonLocked()` | `isAccountNonExpired()` |
+|:---------------|:-:|:-:|:-:|
+| `PENDING_VERIFICATION` | ✅ | ✅ | ✅ |
+| `ACTIVE` | ✅ | ✅ | ✅ |
+| `DISABLED` | ✅ | ❌ | ✅ |
+| `DELETED` | ❌ | ✅ | ❌ |
+
+Spring Security checks these methods during authentication — disabled and deleted accounts cannot log in.
 ### Authentication Pipeline
 
 ```
@@ -855,6 +979,9 @@ curl http://localhost:8080/actuator/health
 | _User not found_ | Verify user exists and email is verified (`account_state = ACTIVE`) |
 | _Verification email was recently sent_ | Wait 60 seconds before resending |
 | _Invalid token_ | Token expired (30 min window) or already used |
+| _Account is disabled/deleted_ | User account is `DISABLED` or `DELETED` — contact support |
+| _Forgot password email not received_ | Verify email exists in system; check spam folder; wait 60s before re-requesting |
+| _Validation error (400)_ | Check request body matches DTO constraints (see [Input Validation](#input-validation)) |
 | _Redis connection failed_ | Check `REDIS_HOST` / `REDIS_PORT` and that Redis is running |
 
 ---

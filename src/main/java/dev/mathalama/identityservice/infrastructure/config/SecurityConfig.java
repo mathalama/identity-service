@@ -52,7 +52,7 @@ public class SecurityConfig {
                 .csrf(AbstractHttpConfigurer::disable)
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(authorize -> authorize
-                        .requestMatchers("/auth/register", "/auth/authenticate", "/auth/refresh", "/auth/verify-email", "/auth/resend-verification").permitAll()
+                        .requestMatchers("/auth/register", "/auth/authenticate", "/auth/refresh", "/auth/verify-email", "/auth/resend-verification", "/auth/forgot-password", "/auth/reset-forgotten-password").permitAll()
                         .requestMatchers("/actuator/health").permitAll()
                         .requestMatchers("/auth/logout").authenticated()
                         .requestMatchers("/api/**").authenticated()

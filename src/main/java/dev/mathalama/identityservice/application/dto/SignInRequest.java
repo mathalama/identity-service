@@ -1,8 +1,11 @@
 package dev.mathalama.identityservice.application.dto;
 
-import jakarta.annotation.Nonnull;
+import jakarta.validation.constraints.NotBlank;
 
 public record SignInRequest(
-        @Nonnull String login,
-        @Nonnull String password
+        @NotBlank(message = "Login is required")
+        String login,
+
+        @NotBlank(message = "Password is required")
+        String password
 ) {}

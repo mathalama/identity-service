@@ -78,12 +78,12 @@ public class Users implements UserDetails {
 
     @Override
     public boolean isAccountNonExpired() {
-        return true;
+        return accountState != AccountState.DELETED;
     }
 
     @Override
     public boolean isAccountNonLocked() {
-        return true;
+        return accountState != AccountState.DISABLED;
     }
 
     @Override
@@ -93,7 +93,8 @@ public class Users implements UserDetails {
 
     @Override
     public boolean isEnabled() {
-        return true;
+        return accountState == AccountState.ACTIVE
+                || accountState == AccountState.PENDING_VERIFICATION;
     }
 
     public static class UsersBuilder {
