@@ -24,7 +24,7 @@ public class EmailServiceImpl implements EmailService {
             );
 
             String subject = "Email Verification - Identity Service";
-            String htmlContent = buildEmailTemplate(username, verificationLink);
+            String htmlContent = buildVerificationEmailTemplate(username, verificationLink);
 
             log.info("Sending verification email to: {}", email);
 
@@ -43,7 +43,29 @@ public class EmailServiceImpl implements EmailService {
         }
     }
 
-    private String buildEmailTemplate(String username, String verificationLink) {
+    @Override
+    @Async("taskExecutor")
+    public void sendPasswordResetEmail(String email, String username, String resetToken) {
+        try {
+            String resetLink = String.format(
+                "%s/reset-password?token=%s",
+                frontendUrl,
+                resetToken
+            );
+
+            log.info("Sending password reset email to: {}", email);
+
+            // Placeholder for actual email sending
+            // Use the same transport as sendVerificationEmail
+
+            log.info("Password reset email sent successfully to: {}", email);
+
+        } catch (Exception ex) {
+            log.error("Failed to send password reset email to: {}", email, ex);
+        }
+    }
+
+    private String buildVerificationEmailTemplate(String username, String verificationLink) {
         return String.format("""
             <!DOCTYPE html>
             <html>

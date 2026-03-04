@@ -1,7 +1,8 @@
 package dev.mathalama.identityservice.application.dto;
 
-import jakarta.annotation.Nonnull;
+import jakarta.validation.constraints.NotBlank;
 
 public record VerifyEmailRequest(
-    @Nonnull String token
+        @NotBlank(message = "Token is required")
+        String token
 ) {}
