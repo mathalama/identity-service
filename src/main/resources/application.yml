@@ -29,6 +29,12 @@ spring:
               - email
               - profile
             redirect-uri: "{baseUrl}/login/oauth2/code/{registrationId}"
+          github:
+            client-id: ${GITHUB_CLIENT_ID}
+            client-secret: ${GITHUB_CLIENT_SECRET}
+            redirect-uri: "{baseUrl}/login/oauth2/code/{registrationId}"
+            scope: [ user:email ]
+
       authorizationserver:
         issuer: "${BASE_URL}"
 
@@ -65,3 +71,15 @@ app:
   verification:
     token-expiry-minutes: 30
     resend-cooldown-seconds: 60
+
+server:
+  port: 8010
+
+logging:
+  level:
+    root: INFO
+    dev.mathalama.identityservice: DEBUG
+    org.springframework.security: DEBUG
+    org.springframework.security.oauth2: DEBUG
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
