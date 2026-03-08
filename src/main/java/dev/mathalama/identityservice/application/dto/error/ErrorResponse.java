@@ -1,4 +1,4 @@
-package dev.mathalama.identityservice.application.dto;
+package dev.mathalama.identityservice.application.dto.error;
 
 import java.time.LocalDateTime;
 

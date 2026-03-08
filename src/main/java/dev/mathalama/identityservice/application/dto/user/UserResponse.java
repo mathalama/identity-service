@@ -1,4 +1,4 @@
-package dev.mathalama.identityservice.application.dto;
+package dev.mathalama.identityservice.application.dto.user;
 
 import dev.mathalama.identityservice.domain.entity.Users;
 import dev.mathalama.identityservice.domain.enums.AccountState;

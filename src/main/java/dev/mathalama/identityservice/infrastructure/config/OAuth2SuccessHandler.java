@@ -11,6 +11,7 @@ import org.springframework.security.oauth2.core.user.OAuth2User;
 import org.springframework.security.web.authentication.AuthenticationSuccessHandler;
 import org.springframework.stereotype.Component;
 
+import dev.mathalama.identityservice.application.service.EventPublisher;
 import dev.mathalama.identityservice.application.service.JwtService;
 import dev.mathalama.identityservice.domain.entity.Users;
 import dev.mathalama.identityservice.domain.enums.AccountState;
@@ -25,10 +26,12 @@ public class OAuth2SuccessHandler implements AuthenticationSuccessHandler {
     private static final Logger logger = LoggerFactory.getLogger(OAuth2SuccessHandler.class);
     private final UserRepository userRepository;
     private final JwtService jwtService;
+    private final EventPublisher eventPublisher;
 
-    public OAuth2SuccessHandler(UserRepository userRepository, JwtService jwtService) {
+    public OAuth2SuccessHandler(UserRepository userRepository, JwtService jwtService, EventPublisher eventPublisher) {
         this.userRepository = userRepository;
         this.jwtService = jwtService;
+        this.eventPublisher = eventPublisher;
     }
 
     @Override
@@ -41,15 +44,25 @@ public class OAuth2SuccessHandler implements AuthenticationSuccessHandler {
             String name = (String) attributes.get("name");
             String uniqueId = extractUniqueIdentifier(attributes);
             
+            // Определяем OAuth2 провайдер из ClientRegistrationId
+            String authProvider = getAuthProvider(request);
+            
             logger.info("Email: {}", email);
             logger.info("Name: {}", name);
             logger.info("Unique ID: {}", uniqueId);
+            logger.info("Auth Provider: {}", authProvider);
             
             // 1. Найти или создать user
+            boolean isNewUser = !userRepository.findByEmail(email).isPresent();
             Users user = userRepository.findByEmail(email)
                     .orElseGet(() -> createNewUser(email, name, uniqueId));
             
-            // 2. Генерировать JWT токен
+            // 2. Опубликовать событие если это новый пользователь
+            if (isNewUser) {
+                eventPublisher.publishUserRegistered(user, authProvider);
+            }
+            
+            // 3. Генерировать JWT токен
             String accessToken = jwtService.generateAccessToken(user);
             String refreshToken = jwtService.generateRefreshToken(user);
             
@@ -58,7 +71,7 @@ public class OAuth2SuccessHandler implements AuthenticationSuccessHandler {
             logger.info("User Email: {}", user.getEmail());
             logger.info("Access Token Generated: {}", accessToken.substring(0, 20) + "...");
             
-            // 3. Редирект на фронтенд с токеном
+            // 4. Редирект на фронтенд с токеном
             String redirectUrl = String.format("http://localhost:3000/auth/callback?accessToken=%s&refreshToken=%s&userId=%s", 
                     accessToken, refreshToken, user.getId());
             response.sendRedirect(redirectUrl);
@@ -112,4 +125,19 @@ public class OAuth2SuccessHandler implements AuthenticationSuccessHandler {
         // Если ничего не найдено, генерируем случайное значение
         return String.valueOf(System.currentTimeMillis());
     }
+    
+    /**
+     * Определяет OAuth2 провайдера по URL запроса
+     * Примеры: /login/oauth2/code/google, /login/oauth2/code/github
+     */
+    private String getAuthProvider(HttpServletRequest request) {
+        String requestUri = request.getRequestURI();
+        if (requestUri.contains("google")) {
+            return "OAUTH2_GOOGLE";
+        } else if (requestUri.contains("github")) {
+            return "OAUTH2_GITHUB";
+        }
+        return "OAUTH2_UNKNOWN";
+    }
 }
+

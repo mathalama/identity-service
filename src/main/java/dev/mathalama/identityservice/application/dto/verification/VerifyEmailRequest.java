@@ -1,4 +1,4 @@
-package dev.mathalama.identityservice.application.dto;
+package dev.mathalama.identityservice.application.dto.verification;
 
 import jakarta.validation.constraints.NotBlank;
 
