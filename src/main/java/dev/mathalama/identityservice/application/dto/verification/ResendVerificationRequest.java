@@ -1,9 +1,9 @@
-package dev.mathalama.identityservice.application.dto;
+package dev.mathalama.identityservice.application.dto.verification;
 
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 
-public record ForgotPasswordRequest(
+public record ResendVerificationRequest(
         @NotBlank(message = "Email is required")
         @Email(message = "Invalid email format")
         String email

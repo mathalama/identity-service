@@ -1,6 +1,8 @@
 package dev.mathalama.identityservice.application.service.impl;
 
-import dev.mathalama.identityservice.application.dto.*;
+import dev.mathalama.identityservice.application.dto.auth.AuthResponse;
+import dev.mathalama.identityservice.application.dto.auth.SignInRequest;
+import dev.mathalama.identityservice.application.dto.verification.VerificationResponse;
 import dev.mathalama.identityservice.application.service.AuthService;
 import dev.mathalama.identityservice.application.service.EmailService;
 import dev.mathalama.identityservice.application.service.JwtService;

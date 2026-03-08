@@ -14,6 +14,16 @@ spring:
         min-idle: 0
         max-wait: -1ms
 
+  rabbitmq:
+    host: ${SPRING_RABBITMQ_HOST:localhost}
+    port: ${SPRING_RABBITMQ_PORT:5672}
+    username: ${SPRING_RABBITMQ_USERNAME:guest}
+    password: ${SPRING_RABBITMQ_PASSWORD:guest}
+    virtual-host: /
+    connection-timeout: 10000
+    publisher-returns: true
+    publisher-confirm-type: correlated
+
   security:
     user:
       name: ${SECURITY_USER}

@@ -1,6 +1,15 @@
 package dev.mathalama.identityservice.presentation.controller;
 
-import dev.mathalama.identityservice.application.dto.*;
+import dev.mathalama.identityservice.application.dto.auth.AuthResponse;
+import dev.mathalama.identityservice.application.dto.auth.RefreshTokenRequest;
+import dev.mathalama.identityservice.application.dto.auth.SignInRequest;
+import dev.mathalama.identityservice.application.dto.auth.SignUpRegister;
+import dev.mathalama.identityservice.application.dto.password.ForgotPasswordRequest;
+import dev.mathalama.identityservice.application.dto.password.NewPasswordRequest;
+import dev.mathalama.identityservice.application.dto.password.ResetPasswordRequest;
+import dev.mathalama.identityservice.application.dto.verification.ResendVerificationRequest;
+import dev.mathalama.identityservice.application.dto.verification.VerificationResponse;
+import dev.mathalama.identityservice.application.dto.verification.VerifyEmailRequest;
 import dev.mathalama.identityservice.application.service.AuthService;
 import dev.mathalama.identityservice.application.service.JwtService;
 import dev.mathalama.identityservice.domain.entity.Users;

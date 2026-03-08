@@ -1,6 +1,8 @@
 package dev.mathalama.identityservice.application.service;
 
-import dev.mathalama.identityservice.application.dto.*;
+import dev.mathalama.identityservice.application.dto.auth.AuthResponse;
+import dev.mathalama.identityservice.application.dto.auth.SignInRequest;
+import dev.mathalama.identityservice.application.dto.verification.VerificationResponse;
 import dev.mathalama.identityservice.domain.entity.Users;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
