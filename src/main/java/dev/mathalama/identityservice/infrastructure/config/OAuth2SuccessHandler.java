@@ -13,6 +13,7 @@ import org.springframework.stereotype.Component;
 
 import dev.mathalama.identityservice.application.service.EventPublisher;
 import dev.mathalama.identityservice.application.service.JwtService;
+import dev.mathalama.identityservice.application.service.OAuthProviderService;
 import dev.mathalama.identityservice.domain.entity.Users;
 import dev.mathalama.identityservice.domain.enums.AccountState;
 import dev.mathalama.identityservice.infrastructure.repository.UserRepository;
@@ -27,11 +28,16 @@ public class OAuth2SuccessHandler implements AuthenticationSuccessHandler {
     private final UserRepository userRepository;
     private final JwtService jwtService;
     private final EventPublisher eventPublisher;
+    private final OAuthProviderService oauthProviderService;
 
-    public OAuth2SuccessHandler(UserRepository userRepository, JwtService jwtService, EventPublisher eventPublisher) {
+    public OAuth2SuccessHandler(UserRepository userRepository, 
+                               JwtService jwtService, 
+                               EventPublisher eventPublisher,
+                               OAuthProviderService oauthProviderService) {
         this.userRepository = userRepository;
         this.jwtService = jwtService;
         this.eventPublisher = eventPublisher;
+        this.oauthProviderService = oauthProviderService;
     }
 
     @Override
@@ -42,36 +48,61 @@ public class OAuth2SuccessHandler implements AuthenticationSuccessHandler {
             Map<String, Object> attributes = oauth2User.getAttributes();
             String email = (String) attributes.get("email");
             String name = (String) attributes.get("name");
-            String uniqueId = extractUniqueIdentifier(attributes);
-            
-            // Определяем OAuth2 провайдер из ClientRegistrationId
-            String authProvider = getAuthProvider(request);
+            String providerId = extractUniqueIdentifier(attributes);
+            String providerName = getAuthProviderName(request);
             
             logger.info("Email: {}", email);
             logger.info("Name: {}", name);
-            logger.info("Unique ID: {}", uniqueId);
-            logger.info("Auth Provider: {}", authProvider);
+            logger.info("Provider ID: {}", providerId);
+            logger.info("Provider: {}", providerName);
             
-            // 1. Найти или создать user
-            boolean isNewUser = !userRepository.findByEmail(email).isPresent();
-            Users user = userRepository.findByEmail(email)
-                    .orElseGet(() -> createNewUser(email, name, uniqueId));
+            Users user = null;
+            boolean isNewUser = false;
             
-            // 2. Опубликовать событие если это новый пользователь
-            if (isNewUser) {
-                eventPublisher.publishUserRegistered(user, authProvider);
+            // 1. Проверить: не связан ли этот провайдер уже с существующим аккаунтом?
+            var existingUser = oauthProviderService.findUserByOAuthProvider(providerName, providerId);
+            
+            if (existingUser.isPresent()) {
+                // Этот провайдер уже связан с аккаунтом
+                user = existingUser.get();
+                logger.info("User found by {} provider ID", providerName);
+            } else {
+                // 2. Провайдер не связан. Проверить: есть ли пользователь с такой email?
+                var userByEmail = userRepository.findByEmail(email);
+                
+                if (userByEmail.isPresent()) {
+                    // Email найден - связываем этот провайдер с существующим аккаунтом
+                    user = userByEmail.get();
+                    logger.info("User found by email. Linking {} provider", providerName);
+                    oauthProviderService.linkOAuthProvider(user, providerName, providerId, email);
+                } else {
+                    // 3. Полностью новый пользователь - создаём аккаунт и связываем провайдер
+                    user = createNewUser(email, name, providerId);
+                    isNewUser = true;
+                    logger.info("New user created. Linking {} provider", providerName);
+                    oauthProviderService.linkOAuthProvider(user, providerName, providerId, email);
+                }
             }
             
-            // 3. Генерировать JWT токен
+            // Записываем факт входа через этот провайдер
+            oauthProviderService.recordLogin(user, providerName);
+            
+            // Опубликовать событие если это новый пользователь
+            if (isNewUser) {
+                eventPublisher.publishUserRegistered(user, providerName);
+            }
+            
+            // Генерировать JWT токен
             String accessToken = jwtService.generateAccessToken(user);
             String refreshToken = jwtService.generateRefreshToken(user);
             
-            logger.info("=== OAuth2 User Saved/Found ===");
+            logger.info("=== OAuth2 Authentication Successful ===");
             logger.info("User ID: {}", user.getId());
             logger.info("User Email: {}", user.getEmail());
+            logger.info("Linked Providers: {}", oauthProviderService.getLinkedProviderNames(user.getId()));
             logger.info("Access Token Generated: {}", accessToken.substring(0, 20) + "...");
             
-            // 4. Редирект на фронтенд с токеном
+            // Редирект на фронтенд с токеном
             String redirectUrl = String.format("http://localhost:3000/auth/callback?accessToken=%s&refreshToken=%s&userId=%s", 
                     accessToken, refreshToken, user.getId());
             response.sendRedirect(redirectUrl);
@@ -102,8 +133,8 @@ public class OAuth2SuccessHandler implements AuthenticationSuccessHandler {
     }
     
     /**
-     * Извлекает уникальный идентификатор из атрибутов OAuth2 провайдера
-     * поддерживает: Google (sub), GitHub (id), и другие провайдеры
+     * Извлекает уникальный идентификатор провайдера из атрибутов OAuth2
+     * Поддерживает: Google (sub), GitHub (id), и другие стандарты
      */
     private String extractUniqueIdentifier(Map<String, Object> attributes) {
         // Google и OpenID Connect стандарт
@@ -127,17 +158,19 @@ public class OAuth2SuccessHandler implements AuthenticationSuccessHandler {
     }
     
     /**
-     * Определяет OAuth2 провайдера по URL запроса
-     * Примеры: /login/oauth2/code/google, /login/oauth2/code/github
+     * Определяет имя OAuth2 провайдера по URL запроса
+     * Примеры: /login/oauth2/code/google → "GOOGLE", /login/oauth2/code/github → "GITHUB"
      */
-    private String getAuthProvider(HttpServletRequest request) {
+    private String getAuthProviderName(HttpServletRequest request) {
         String requestUri = request.getRequestURI();
         if (requestUri.contains("google")) {
-            return "OAUTH2_GOOGLE";
+            return "GOOGLE";
         } else if (requestUri.contains("github")) {
-            return "OAUTH2_GITHUB";
+            return "GITHUB";
+        } else if (requestUri.contains("microsoft")) {
+            return "MICROSOFT";
         }
-        return "OAUTH2_UNKNOWN";
+        return "UNKNOWN";
     }
 }
 
