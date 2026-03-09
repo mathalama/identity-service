@@ -2,10 +2,11 @@ openapi: 3.0.3
 info:
   title: Identity Service API
   description: |
-    Authentication and authorization microservice.
+    Authentication and authorization microservice with OAuth2 provider linking.
     
     Issues JWT access & refresh tokens (HMAC-SHA256) for stateless API authentication.
-    Supports OAuth2 Authorization Server (RSA-256) and OAuth2 Login (Google).
+    Supports OAuth2 Authorization Server (RSA-256), OAuth2 Login (Google, GitHub), and
+    unified account linking — allowing a single user account with multiple authentication methods.
     
     ## Authentication Flow
     
@@ -16,10 +17,21 @@ info:
     5. When access token expires, refresh via `POST /auth/refresh`
     6. Logout via `POST /auth/logout` to revoke all tokens
     
+    ## User Profile & OAuth Providers
+    
+    - Get profile: `GET /auth/me`
+    - List linked providers: `GET /auth/me/providers`
+    - Unlink provider: `DELETE /auth/me/providers/{provider}`
+    
     ## Forgot Password Flow
     
     1. Request reset email via `POST /auth/forgot-password`
     2. Set new password via `POST /auth/reset-forgotten-password`
+    
+    ## Token Validation (Service-to-Service)
+    
+    Other microservices can validate JWT tokens via `POST /auth/validate`
+    to verify tokens and retrieve user information without parsing JWT themselves.
     
     ## Token Lifecycle
     
@@ -41,8 +53,12 @@ servers:
 tags:
   - name: Authentication
     description: User registration, verification, login, token refresh, and logout
+  - name: User Profile
+    description: Current user profile and linked OAuth providers
   - name: OAuth2
     description: OAuth2 Authorization Server endpoints
+  - name: Service-to-Service
+    description: Inter-microservice token validation
   - name: Health
     description: Service health checks
 
@@ -478,6 +494,188 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
+  /auth/me:
+    get:
+      tags:
+        - User Profile
+      summary: Get current user profile
+      description: |
+        Returns detailed information about the currently authenticated user,
+        including ID, username, email, verification status, account state, roles, and creation time.
+        
+        Requires a valid access token in the `Authorization` header.
+      operationId: getCurrentUser
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Current user profile retrieved successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CurrentUserDto'
+              example:
+                id: 550e8400-e29b-41d4-a716-446655440000
+                username: john_doe
+                email: john@example.com
+                emailVerified: true
+                accountState: ACTIVE
+                roles:
+                  - ROLE_USER
+                createdAt: 1740240000000
+        "401":
+          description: Missing or invalid access token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /auth/me/providers:
+    get:
+      tags:
+        - User Profile
+      summary: Get linked OAuth providers
+      description: |
+        Returns a list of all OAuth providers linked to the current user account.
+        
+        Includes provider name, associated email, link timestamp, and last login time.
+        Useful for displaying "Connected Accounts" in user settings.
+        
+        Requires a valid access token in the `Authorization` header.
+      operationId: getLinkedProviders
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: List of linked OAuth providers.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/OAuthProviderDto'
+              example:
+                - id: 550e8400-e29b-41d4-a716-446655440001
+                  providerName: GOOGLE
+                  providerEmail: john@gmail.com
+                  linkedAt: 1740239000000
+                  lastLoginAt: 1740240000000
+                - id: 550e8400-e29b-41d4-a716-446655440002
+                  providerName: GITHUB
+                  providerEmail: john_dev
+                  linkedAt: 1740238000000
+                  lastLoginAt: 1740235000000
+        "401":
+          description: Missing or invalid access token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /auth/me/providers/{provider}:
+    delete:
+      tags:
+        - User Profile
+      summary: Unlink OAuth provider
+      description: |
+        Removes a specific OAuth provider from the current user's account.
+        
+        A user must maintain at least one authentication method, so the system
+        prevents unlinking the last remaining provider to avoid account lockout.
+        
+        Requires a valid access token in the `Authorization` header.
+      operationId: unlinkProvider
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: provider
+          in: path
+          required: true
+          schema:
+            type: string
+          description: OAuth provider name to unlink (GOOGLE, GITHUB, etc.)
+          example: GOOGLE
+      responses:
+        "204":
+          description: OAuth provider unlinked successfully.
+        "400":
+          description: Cannot unlink the last remaining authentication method.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                status: 400
+                error: Bad Request
+                message: Cannot unlink your last authentication method
+                path: /auth/me/providers/GOOGLE
+                timestamp: "2026-02-27T12:00:00Z"
+        "401":
+          description: Missing or invalid access token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "404":
+          description: Provider is not linked to this account.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /auth/validate:
+    post:
+      tags:
+        - Service-to-Service
+      summary: Validate JWT token (inter-service endpoint)
+      description: |
+        Validates a JWT access token and returns the associated user information.
+        
+        This is a service-to-service endpoint used by other microservices (Account Service,
+        Transfer Service, etc.) to verify tokens and retrieve user details for authorization
+        decisions without duplicating JWT parsing logic.
+        
+        Handles token format variations (with or without "Bearer " prefix).
+        Always returns HTTP 200 OK with a success/failure flag in the response body.
+        
+        This endpoint is **public** — useful for inter-service communication.
+      operationId: validateToken
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TokenValidationRequest'
+            example:
+              token: eyJhbGciOiJIUzI1NiJ9.eyJ0eXBlIjoiYWNjZXNzIiw...
+      responses:
+        "200":
+          description: Token validation result (check 'valid' flag in response).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenValidationResponse'
+              examples:
+                success:
+                  summary: Valid token
+                  value:
+                    valid: true
+                    userId: 550e8400-e29b-41d4-a716-446655440000
+                    username: john_doe
+                    email: john@example.com
+                    roles:
+                      - ROLE_USER
+                    message: "Token is valid"
+                failure:
+                  summary: Invalid token
+                  value:
+                    valid: false
+                    userId: null
+                    username: null
+                    email: null
+                    roles: []
+                    message: "Invalid or expired token"
+
   /actuator/health:
     get:
       tags:
@@ -672,6 +870,148 @@ components:
         message:
           type: string
           example: User registered successfully
+
+    CurrentUserDto:
+      type: object
+      description: Current authenticated user's profile information.
+      required:
+        - id
+        - username
+        - email
+        - emailVerified
+        - accountState
+        - roles
+        - createdAt
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: User's unique identifier
+          example: 550e8400-e29b-41d4-a716-446655440000
+        username:
+          type: string
+          description: User's login username
+          example: john_doe
+        email:
+          type: string
+          format: email
+          description: User's email address
+          example: john@example.com
+        emailVerified:
+          type: boolean
+          description: Whether the email has been verified
+          example: true
+        accountState:
+          type: string
+          description: Current account state
+          enum:
+            - PENDING_VERIFICATION
+            - ACTIVE
+            - SUSPENDED
+            - LOCKED
+            - DELETED
+          example: ACTIVE
+        roles:
+          type: array
+          items:
+            type: string
+          description: Set of role names assigned to the user
+          example:
+            - ROLE_USER
+        createdAt:
+          type: integer
+          format: int64
+          description: Account creation timestamp in milliseconds since epoch
+          example: 1740240000000
+
+    OAuthProviderDto:
+      type: object
+      description: An OAuth provider linked to a user account.
+      required:
+        - id
+        - providerName
+        - providerEmail
+        - linkedAt
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Unique identifier of this provider link
+          example: 550e8400-e29b-41d4-a716-446655440001
+        providerName:
+          type: string
+          description: OAuth provider name (GOOGLE, GITHUB, etc.)
+          example: GOOGLE
+        providerEmail:
+          type: string
+          format: email
+          description: Email address associated with this provider
+          example: john@gmail.com
+        linkedAt:
+          type: integer
+          format: int64
+          description: Timestamp when provider was linked (milliseconds since epoch)
+          example: 1740239000000
+        lastLoginAt:
+          type: integer
+          format: int64
+          nullable: true
+          description: Timestamp of last login via this provider (null if never used to login)
+          example: 1740240000000
+
+    TokenValidationRequest:
+      type: object
+      required:
+        - token
+      properties:
+        token:
+          type: string
+          description: JWT access token to validate (with or without "Bearer " prefix)
+          example: eyJhbGciOiJIUzI1NiJ9.eyJ0eXBlIjoiYWNjZXNzIiw...
+
+    TokenValidationResponse:
+      type: object
+      description: Result of JWT token validation for inter-service communication.
+      required:
+        - valid
+        - userId
+        - username
+        - email
+        - roles
+        - message
+      properties:
+        valid:
+          type: boolean
+          description: Whether the token is valid and user exists
+          example: true
+        userId:
+          type: string
+          format: uuid
+          nullable: true
+          description: User's unique identifier (null if validation failed)
+          example: 550e8400-e29b-41d4-a716-446655440000
+        username:
+          type: string
+          nullable: true
+          description: User's username (null if validation failed)
+          example: john_doe
+        email:
+          type: string
+          format: email
+          nullable: true
+          description: User's email address (null if validation failed)
+          example: john@example.com
+        roles:
+          type: array
+          items:
+            type: string
+          description: User's role names (empty if validation failed)
+          example:
+            - ROLE_USER
+        message:
+          type: string
+          description: Descriptive message about validation result
+          example: "Token is valid"
 
     UserResponse:
       type: object

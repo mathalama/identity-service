@@ -2,6 +2,7 @@ package dev.mathalama.identityservice.infrastructure.service;
 
 import dev.mathalama.identityservice.application.service.JwtService;
 import dev.mathalama.identityservice.domain.entity.Users;
+import dev.mathalama.identityservice.infrastructure.repository.UserRepository;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.ExpiredJwtException;
 import io.jsonwebtoken.JwtException;
@@ -20,6 +21,23 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
+/**
+ * Implementation of JWT token service.
+ *
+ * Handles creation, validation, and management of JWT access and refresh tokens.
+ * Uses HMAC-SHA256 signing and stores refresh tokens + blacklist entries in Redis.
+ *
+ * Token Strategy:
+ * - Access tokens: Short-lived (default ~15 minutes), used for API calls
+ * - Refresh tokens: Long-lived (default ~7 days), stored in Redis with user ID key
+ * - Logout: Access token is blacklisted, refresh token is revoked
+ *
+ * Security features:
+ * - HMAC-SHA256 signing with configured secret key
+ * - Redis-backed refresh token validation (prevents reuse of revoked tokens)
+ * - Blacklist mechanism for access tokens on logout
+ * - Token ID (jti claim) for individual token tracking
+ */
 @Slf4j
 @Service
 public class JwtServiceImpl implements JwtService {
@@ -28,6 +46,7 @@ public class JwtServiceImpl implements JwtService {
     private final long accessTokenExpiration;
     private final long refreshTokenExpiration;
     private final RedisTemplate<String, String> redisTemplate;
+    private final UserRepository userRepository;
 
     private static final String REFRESH_TOKEN_PREFIX = "refresh:token:";
     private static final String BLACKLIST_PREFIX = "blacklist:access:";
@@ -35,11 +54,13 @@ public class JwtServiceImpl implements JwtService {
     public JwtServiceImpl(@Value("${jwt.secret}") String secret,
                           @Value("${jwt.expiration}") long accessExpiration,
                           @Value("${jwt.refresh-expiration:604800000}") long refreshExpiration,
-                          RedisTemplate<String, String> redisTemplate) {
+                          RedisTemplate<String, String> redisTemplate,
+                          UserRepository userRepository) {
         this.secretKey = Keys.hmacShaKeyFor(secret.getBytes());
         this.accessTokenExpiration = accessExpiration;
         this.refreshTokenExpiration = refreshExpiration;
         this.redisTemplate = redisTemplate;
+        this.userRepository = userRepository;
     }
 
     @Override
@@ -232,6 +253,59 @@ public class JwtServiceImpl implements JwtService {
         } catch (IllegalArgumentException e) {
             log.warn("JWT claims string is empty: {}", e.getMessage());
             return false;
+        }
+    }
+
+    /**
+     * Validate a JWT token and extract the associated user.
+     *
+     * This method performs comprehensive token validation and retrieves the full
+     * User entity from the database. It's useful for inter-service communication
+     * where other microservices need to verify a token and get complete user
+     * information including roles and account state.
+     *
+     * Validation process:
+     * 1. Validates token signature, expiration, and format
+     * 2. Extracts user ID from token subject claim
+     * 3. Loads full User entity from database
+     *
+     * @param token the JWT access token to validate and parse
+     * @return the Users entity if token is valid and user exists, null otherwise
+     *         (null return indicates: token invalid, expired, malformed, or user not found)
+     *
+     * @see org.springframework.security.core.context.SecurityContextHolder for
+     *      getting current authenticated user in request context
+     */
+    @Override
+    public Users validateTokenAndExtractUser(String token) {
+        try {
+            // Validate the token first
+            if (!validateToken(token)) {
+                log.debug("Token validation failed");
+                return null;
+            }
+
+            // Extract user ID from token
+            String userId = getUserIdFromToken(token);
+            if (userId == null || userId.isEmpty()) {
+                log.warn("Could not extract user ID from token");
+                return null;
+            }
+
+            // Load user from database
+            Users user = userRepository.findById(UUID.fromString(userId)).orElse(null);
+            
+            if (user == null) {
+                log.warn("User not found for ID: {}", userId);
+                return null;
+            }
+
+            log.debug("User extracted from token: {}", user.getUsername());
+            return user;
+
+        } catch (Exception e) {
+            log.warn("Error validating token and extracting user: {}", e.getMessage());
+            return null;
         }
     }
 }

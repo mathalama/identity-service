@@ -5,7 +5,7 @@
 **Production-ready authentication & authorization microservice**
 
 [![Java](https://img.shields.io/badge/Java-21-ED8B00?style=for-the-badge&logo=openjdk&logoColor=white)](https://openjdk.org/)
-[![Spring Boot](https://img.shields.io/badge/Spring_Boot-4.0.1-6DB33F?style=for-the-badge&logo=springboot&logoColor=white)](https://spring.io/projects/spring-boot)
+[![Spring Boot](https://img.shields.io/badge/Spring_Boot-4.0.3-6DB33F?style=for-the-badge&logo=springboot&logoColor=white)](https://spring.io/projects/spring-boot)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15-4169E1?style=for-the-badge&logo=postgresql&logoColor=white)](https://www.postgresql.org/)
 [![Redis](https://img.shields.io/badge/Redis-7-DC382D?style=for-the-badge&logo=redis&logoColor=white)](https://redis.io/)
 [![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?style=for-the-badge&logo=docker&logoColor=white)](https://docs.docker.com/compose/)
@@ -13,14 +13,14 @@
 
 [![Spring Security](https://img.shields.io/badge/Spring_Security-6.x-6DB33F?style=flat-square&logo=springsecurity&logoColor=white)](https://spring.io/projects/spring-security)
 [![JWT](https://img.shields.io/badge/JWT-HMAC--SHA256-000000?style=flat-square&logo=jsonwebtokens&logoColor=white)](https://jwt.io/)
-[![OAuth2](https://img.shields.io/badge/OAuth2-OIDC-EB5424?style=flat-square&logo=auth0&logoColor=white)](https://oauth.net/2/)
+[![OAuth2](https://img.shields.io/badge/OAuth2-Google_GitHub-EB5424?style=flat-square&logo=auth0&logoColor=white)](https://oauth.net/2/)
 [![Flyway](https://img.shields.io/badge/Flyway-Migrations-CC0200?style=flat-square&logo=flyway&logoColor=white)](https://flywaydb.org/)
 [![Swagger](https://img.shields.io/badge/Swagger-OpenAPI_3.0-85EA2D?style=flat-square&logo=swagger&logoColor=black)](https://swagger.io/)
 [![License](https://img.shields.io/badge/License-MIT-yellow?style=flat-square)](LICENSE)
 
 ---
 
-Issues **JWT access & refresh tokens**, serves as an **OAuth2 Authorization Server**, and supports **OAuth2 Login** with third-party providers like Google - all backed by **PostgreSQL** and **Redis**.
+Issues **JWT access & refresh tokens**, serves as an **OAuth2 Authorization Server**, and supports **OAuth2 Login** with third-party providers (Google, GitHub) - all backed by **PostgreSQL** and **Redis**.
 
 [Getting Started](#quick-start) · [API Reference](#api-endpoints) · [Architecture](#architecture) · [Deployment](#deployment)
 
@@ -63,8 +63,10 @@ Issues **JWT access & refresh tokens**, serves as an **OAuth2 Authorization Serv
 | **JWT Access + Refresh Tokens** | Short-lived access token + long-lived refresh token with automatic rotation |
 | **Token Blacklisting** | Instant access token revocation via Redis blacklist on logout |
 | **OAuth2 Authorization Server** | Full OIDC support with RSA-256 signing |
-| **OAuth2 Login** | Third-party authentication (Google and more) |
+| **OAuth2 Login** | Third-party authentication (Google, GitHub, and more) |
+| **OAuth Provider Linking** | Link multiple OAuth providers to a single account for unified authentication |
 | **User Management** | Registration, authentication, email / username login |
+| **User Profile** | Get current user details and manage linked authentication methods |
 | **Role-Based Access Control** | Multi-tier permissions — `USER`, `ADMIN`, `SUPER_ADMIN` |
 | **Email Verification** | Token-based verification with Redis storage (30 min TTL) |
 | **Resend Cooldown** | Rate-limited email resend (60 sec throttle) |
@@ -76,6 +78,7 @@ Issues **JWT access & refresh tokens**, serves as an **OAuth2 Authorization Serv
 | **Automatic Migrations** | Flyway-managed schema versioning |
 | **API Documentation** | Swagger UI with OpenAPI 3.0 |
 | **CORS Support** | Configurable cross-origin access |
+| **Service-to-Service Auth** | `POST /auth/validate` for inter-microservice token validation |
 
 ---
 
@@ -84,7 +87,7 @@ Issues **JWT access & refresh tokens**, serves as an **OAuth2 Authorization Serv
 | Layer | Technology | Version |
 |:------|:-----------|:--------|
 | **Language** | Java (OpenJDK) | 21 |
-| **Framework** | Spring Boot | 4.0.1 |
+| **Framework** | Spring Boot | 4.0.3 |
 | **Security** | Spring Security + OAuth2 Authorization Server + OAuth2 Client | 6.x |
 | **ORM** | Spring Data JPA + Hibernate | — |
 | **Database** | PostgreSQL | 15+ |
@@ -112,8 +115,8 @@ Issues **JWT access & refresh tokens**, serves as an **OAuth2 Authorization Serv
                        │     Access + Refresh tokens (HMAC-SHA256)    │
 ┌───────────────┐      │     Redis token blacklist & refresh store    │
 │ Google OAuth2 │◀────▶│                                              │
-└───────────────┘      │  ③ OAuth2 Login + Form Login                │
-                       │     Session-based fallback auth              │
+│ GitHub OAuth2 │◀────▶│  ③ OAuth2 Login + Form Login                │
+└───────────────┘      │     Session-based fallback auth              │
                        └──────────────┬───────────────────────────────┘
                                       │
                           ┌───────────┴───────────┐
@@ -223,6 +226,8 @@ docker compose up -d --build
 | `SECURITY_PASSWORD` | — | — | Spring Security default password |
 | `GOOGLE_CLIENT_ID` | — | — | Google OAuth2 Client ID |
 | `GOOGLE_CLIENT_SECRET` | — | — | Google OAuth2 Client Secret |
+| `GITHUB_CLIENT_ID` | — | — | GitHub OAuth2 Client ID |
+| `GITHUB_CLIENT_SECRET` | — | — | GitHub OAuth2 Client Secret |
 
 ---
 
@@ -240,13 +245,26 @@ docker compose up -d --build
 | `POST` | `/auth/forgot-password` | Request password reset email | `{ email }` |
 | `POST` | `/auth/reset-forgotten-password` | Set new password via reset token | `{ token, newPassword }` |
 
-### Protected (Require `Authorization: Bearer <accessToken>`)
+### User Profile (Protected)
+
+| Method | Endpoint | Description |
+|:------:|:---------|:------------|
+| `GET` | `/auth/me` | Get current user profile |
+| `GET` | `/auth/me/providers` | List linked OAuth providers |
+| `DELETE` | `/auth/me/providers/{provider}` | Unlink OAuth provider |
+
+### Account Management (Protected)
 
 | Method | Endpoint | Description |
 |:------:|:---------|:------------|
 | `POST` | `/auth/logout` | Revoke refresh token + blacklist access token |
 | `POST` | `/auth/reset-password` | Change password |
-| `*` | `/api/**` | Application-specific endpoints |
+
+### Service-to-Service (Internal)
+
+| Method | Endpoint | Description |
+|:------:|:---------|:------------|
+| `POST` | `/auth/validate` | Validate JWT token and get user info |
 
 ### OAuth2 Authorization Server
 
@@ -262,6 +280,7 @@ docker compose up -d --build
 | Method | Endpoint | Description |
 |:------:|:---------|:------------|
 | `GET` | `/oauth2/authorization/google` | Redirect to Google |
+| `GET` | `/oauth2/authorization/github` | Redirect to GitHub |
 
 ### Docs & Health
 
@@ -352,6 +371,111 @@ curl -X POST http://localhost:8080/auth/logout \
 // 204 No Content
 // Access token is blacklisted in Redis (TTL = remaining lifetime)
 // Refresh token is deleted from Redis
+```
+
+</details>
+
+<details>
+<summary><b>Get current user profile</b></summary>
+
+```bash
+curl http://localhost:8080/auth/me \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiJ9..."
+```
+
+```json
+// 200 OK
+{
+  "id": "550e8400-e29b-41d4-a716-446655440000",
+  "username": "john_doe",
+  "email": "john@example.com",
+  "emailVerified": true,
+  "accountState": "ACTIVE",
+  "roles": ["ROLE_USER"],
+  "createdAt": 1740240000000
+}
+```
+
+</details>
+
+<details>
+<summary><b>List linked OAuth providers</b></summary>
+
+```bash
+curl http://localhost:8080/auth/me/providers \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiJ9..."
+```
+
+```json
+// 200 OK
+[
+  {
+    "id": "550e8400-e29b-41d4-a716-446655440001",
+    "providerName": "GOOGLE",
+    "providerEmail": "john@gmail.com",
+    "linkedAt": 1740239000000,
+    "lastLoginAt": 1740240000000
+  },
+  {
+    "id": "550e8400-e29b-41d4-a716-446655440002",
+    "providerName": "GITHUB",
+    "providerEmail": "john_dev",
+    "linkedAt": 1740238000000,
+    "lastLoginAt": 1740235000000
+  }
+]
+```
+
+</details>
+
+<details>
+<summary><b>Unlink OAuth provider</b></summary>
+
+```bash
+curl -X DELETE http://localhost:8080/auth/me/providers/GOOGLE \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiJ9..."
+```
+
+```
+// 204 No Content
+// Provider unlinked successfully
+```
+
+</details>
+
+<details>
+<summary><b>Validate token (service-to-service)</b></summary>
+
+```bash
+curl -X POST http://localhost:8080/auth/validate \
+  -H "Content-Type: application/json" \
+  -d '{
+    "token": "eyJhbGciOiJIUzI1NiJ9.eyJ0eXBlIjoiYWNjZXNzIiw..."
+  }'
+```
+
+```json
+// 200 OK (on success - check valid flag)
+{
+  "valid": true,
+  "userId": "550e8400-e29b-41d4-a716-446655440000",
+  "username": "john_doe",
+  "email": "john@example.com",
+  "roles": ["ROLE_USER"],
+  "message": "Token is valid"
+}
+```
+
+```json
+// 200 OK (on failure - check valid flag)
+{
+  "valid": false,
+  "userId": null,
+  "username": null,
+  "email": null,
+  "roles": [],
+  "message": "Invalid or expired token"
+}
 ```
 
 </details>
@@ -646,7 +770,6 @@ CREATE TABLE users (
     username                  VARCHAR(255) NOT NULL UNIQUE,
     email                     VARCHAR(255) NOT NULL UNIQUE,
     password                  VARCHAR(255) NOT NULL,
-    permissions               VARCHAR(255),
     account_state             VARCHAR(50),
     security_status           VARCHAR(50),
     email_verified            BOOLEAN DEFAULT false,
@@ -683,6 +806,27 @@ CREATE TABLE users_roles (
 );
 ```
 
+### `oauth_providers` (Multi-provider authentication)
+
+```sql
+CREATE TABLE oauth_providers (
+    id            UUID PRIMARY KEY,
+    user_id       UUID NOT NULL,
+    provider_name VARCHAR(50) NOT NULL,
+    provider_id   VARCHAR(500) NOT NULL,
+    provider_email VARCHAR(255),
+    created_at    TIMESTAMP DEFAULT NOW(),
+    updated_at    TIMESTAMP DEFAULT NOW(),
+    last_login_at TIMESTAMP,
+    CONSTRAINT fk_oauth_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    CONSTRAINT unique_provider_per_user UNIQUE (user_id, provider_name)
+);
+
+CREATE INDEX idx_oauth_provider_name ON oauth_providers(provider_name);
+CREATE INDEX idx_oauth_provider_id ON oauth_providers(provider_id);
+CREATE INDEX idx_oauth_user_id ON oauth_providers(user_id);
+```
+
 ### ER Diagram
 
 ```
@@ -693,11 +837,23 @@ CREATE TABLE users_roles (
 │ username     │  └───▶│ role_id (FK) │◀───┘  │ name         │
 │ email        │       └──────────────┘       └──────────────┘
 │ password     │
-│ account_state│  Enums: PENDING_VERIFICATION │ ACTIVE │ DISABLED │ DELETED
+│ account_state│  Enums: PENDING_VERIFICATION · ACTIVE · DISABLED · DELETED
 │ security_stat│  Enums: MFA_REQUIRED │ MFA_VERIFIED │ PENDING │ VERIFIED
 │ email_verified│
 │ created_at   │
 └──────────────┘
+       │
+       │ 1:N
+       │
+┌──────┴──────────────┐
+│ oauth_providers     │
+├─────────────────────┤
+│ id            (PK)  │
+│ provider_name       │ (GOOGLE, GITHUB, etc)
+│ provider_id         │ (Provider's unique ID)
+│ provider_email      │ (Email from provider)
+│ last_login_at       │ (Login tracking)
+└─────────────────────┘
 ```
 
 ---
@@ -710,11 +866,13 @@ src/main/java/dev/mathalama/identityservice/
 ├── domain/                              ← Business logic & rules
 │   ├── entity/
 │   │   ├── Users.java                     UserDetails aggregate root
-│   │   └── Role.java                      GrantedAuthority entity
+│   │   ├── Role.java                      GrantedAuthority entity
+│   │   └── OAuthProvider.java             OAuth provider link tracking
 │   ├── enums/
 │   │   ├── AccountState.java              PENDING_VERIFICATION · ACTIVE · DISABLED · DELETED
-│   │   ├── SecurityStatus.java            MFA_REQUIRED · MFA_VERIFIED · PENDING · VERIFIED
-│   │   └── KYCLifeCycle.java              KYC pipeline states
+│   │   └── SecurityStatus.java            MFA_REQUIRED · MFA_VERIFIED · PENDING · VERIFIED
+│   ├── repository/
+│   │   └── OAuthProviderRepository.java    OAuth provider queries
 │   └── exception/
 │       ├── UnauthorizedException.java
 │       ├── UserAlreadyExistException.java
@@ -722,47 +880,53 @@ src/main/java/dev/mathalama/identityservice/
 │
 ├── application/                         ← Use cases & DTOs
 │   ├── dto/
-│   │   ├── AuthResponse.java             Access + refresh token pair
-│   │   ├── RefreshTokenRequest.java       Refresh token request
-│   │   ├── ForgotPasswordRequest.java     Forgot password request
-│   │   ├── NewPasswordRequest.java        Password reset via token
-│   │   ├── SignUpRegister.java            Registration request
-│   │   ├── SignInRequest.java             Login request
-│   │   ├── UserResponse.java             User data response
-│   │   ├── ResetPasswordRequest.java      Password change (authenticated)
-│   │   ├── VerifyEmailRequest.java        Email verification request
-│   │   ├── ResendVerificationRequest.java Resend request
-│   │   ├── VerificationResponse.java      Verification status
-│   │   ├── ErrorResponse.java             Error envelope
-│   │   └── UpdateRequest.java             User update
+│   │   ├── auth/
+│   │   │   ├── AuthResponse.java           Access + refresh token pair
+│   │   │   ├── CurrentUserDto.java         Current user profile
+│   │   │   ├── OAuthProviderDto.java       OAuth provider link info
+│   │   │   ├── RefreshTokenRequest.java    Refresh token request
+│   │   │   ├── ForgotPasswordRequest.java  Forgot password request
+│   │   │   ├── NewPasswordRequest.java     Password reset via token
+│   │   │   ├── SignUpRegister.java         Registration request
+│   │   │   ├── SignInRequest.java          Login request
+│   │   │   ├── TokenValidationRequest.java Service-to-service token validation
+│   │   │   ├── TokenValidationResponse.java Token validation result
+│   │   │   ├── ResetPasswordRequest.java   Password change (authenticated)
+│   │   │   ├── VerifyEmailRequest.java     Email verification request
+│   │   │   ├── ResendVerificationRequest.java Resend request
+│   │   │   └── VerificationResponse.java   Verification status
+│   │   └── user/
+│   │       └── UpdateRequest.java          User profile update
 │   └── service/
-│       ├── AuthService.java               Interface — auth use cases
-│       ├── EmailService.java              Interface — email sending
-│       ├── JwtService.java                Interface — JWT & token ops
-│       ├── VerificationTokenService.java  Interface — verification token mgmt
+│       ├── AuthService.java                Interface — auth use cases
+│       ├── EmailService.java               Interface — email sending
+│       ├── JwtService.java                 Interface — JWT & token ops
+│       ├── VerificationTokenService.java   Interface — verification token mgmt
+│       ├── OAuthProviderService.java       Interface — OAuth provider management
 │       └── impl/
-│           └── AuthServiceImpl.java       Core auth logic
+│           └── AuthServiceImpl.java        Core auth logic
 │
 ├── infrastructure/                      ← Frameworks & drivers
 │   ├── repository/
-│   │   ├── UserRepository.java            Spring Data JPA
-│   │   └── RoleRepository.java            Spring Data JPA
+│   │   ├── UserRepository.java             Spring Data JPA
+│   │   ├── RoleRepository.java             Spring Data JPA
+│   │   └── OAuthProviderRepository.java    Spring Data JPA (OAuth queries)
 │   ├── service/
-│   │   ├── EmailServiceImpl.java          Async email via TaskExecutor
-│   │   ├── JwtServiceImpl.java            JWT gen/validation, refresh store, blacklist
+│   │   ├── EmailServiceImpl.java           Async email via TaskExecutor
+│   │   ├── JwtServiceImpl.java             JWT gen/validation, refresh store, blacklist
 │   │   └── VerificationTokenRedisService  Redis verification token storage
 │   └── config/
-│       ├── SecurityConfig.java            3 ordered filter chains
-│       ├── JwtAuthenticationFilter.java   Bearer → SecurityContext (+ blacklist check)
-│       ├── AsyncConfig.java               Thread pool config
-│       ├── RedisConfig.java               Redis connection & serialization
-│       ├── PasswordConfig.java            BCryptPasswordEncoder
-│       ├── WebConfig.java                 CORS configuration
-│       └── FrontendProperties.java        @ConfigurationProperties
+│       ├── SecurityConfig.java             3 ordered filter chains
+│       ├── JwtAuthenticationFilter.java    Bearer → SecurityContext (+ blacklist check)
+│       ├── AsyncConfig.java                Thread pool config
+│       ├── RedisConfig.java                Redis connection & serialization
+│       ├── PasswordConfig.java             BCryptPasswordEncoder
+│       ├── WebConfig.java                  CORS configuration
+│       └── FrontendProperties.java         @ConfigurationProperties
 │
 ├── presentation/                        ← HTTP entry points
 │   └── controller/
-│       └── AuthController.java            /auth/** REST controller
+│       └── AuthController.java             /auth/** REST controller (15 endpoints)
 │
 └── IdentityServiceApplication.java      ← Spring Boot main class
 ```
