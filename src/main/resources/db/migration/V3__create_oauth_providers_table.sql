@@ -2,7 +2,7 @@
 -- Allows users to link multiple OAuth providers (Google, GitHub, etc) to one account
 
 CREATE TABLE oauth_providers (
-    id UUID PRIMARY KEY,
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL,
     provider_name VARCHAR(50) NOT NULL,
     provider_id VARCHAR(500) NOT NULL,

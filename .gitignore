@@ -37,3 +37,19 @@ out/
 .vscode/
 
 .env
+
+### MacOS ###
+.DS_Store
+.AppleDouble
+.LSOverride
+
+### Logs ###
+*.log
+
+### Compiled class file ###
+*.class
+*.jar
+!gradle/wrapper/gradle-wrapper.jar
+*.war
+*.ear
+.env

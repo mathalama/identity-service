@@ -14,15 +14,11 @@ spring:
         min-idle: 0
         max-wait: -1ms
 
-  rabbitmq:
-    host: ${SPRING_RABBITMQ_HOST:localhost}
-    port: ${SPRING_RABBITMQ_PORT:5672}
-    username: ${SPRING_RABBITMQ_USERNAME:guest}
-    password: ${SPRING_RABBITMQ_PASSWORD:guest}
-    virtual-host: /
-    connection-timeout: 10000
-    publisher-returns: true
-    publisher-confirm-type: correlated
+  kafka:
+    bootstrap-servers: ${SPRING_KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
 
   security:
     user:
@@ -50,7 +46,7 @@ spring:
 
   jpa:
     hibernate:
-      ddl-auto: update
+      ddl-auto: validate
     show-sql: false
     open-in-view: false
     properties:
@@ -63,9 +59,11 @@ spring:
     password: ${POSTGRES_PASSWORD}
 
   flyway:
-    enabled: true
+    enabled: false
     locations: classpath:db/migration
     baseline-on-migrate: true
+  lifecycle:
+    timeout-per-shutdown-phase: 20s
 
 jwt:
   secret: ${JWT_SECRET}
@@ -79,11 +77,21 @@ app:
   frontend:
     url: ${FRONTEND_URL}
   verification:
-    token-expiry-minutes: 30
-    resend-cooldown-seconds: 60
+    token-expiry-minutes: ${VERIFICATION_TOKEN_EXPIRY_MINUTES}
+    resend-cooldown-seconds: ${VERIFICATION_RESEND_COOLDOWN_SECONDS}
 
 server:
-  port: 8010
+  port: 8080
+  shutdown: graceful
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      show-details: always
 
 logging:
   level:
@@ -92,4 +100,4 @@ logging:
     org.springframework.security: DEBUG
     org.springframework.security.oauth2: DEBUG
   pattern:
-    console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
+    console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] [trace=%X{traceId},span=%X{spanId}] %-5level %logger{36} - %msg%n"
