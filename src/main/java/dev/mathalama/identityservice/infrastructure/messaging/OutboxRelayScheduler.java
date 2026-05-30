@@ -1,5 +1,6 @@
 package dev.mathalama.identityservice.infrastructure.messaging;
 
+import dev.mathalama.identityservice.application.dto.event.EventType;
 import dev.mathalama.identityservice.infrastructure.persistence.outbox.OutboxEvent;
 import dev.mathalama.identityservice.infrastructure.persistence.outbox.OutboxEventRepository;
 import lombok.RequiredArgsConstructor;
@@ -8,6 +9,8 @@ import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.JsonNode;
 
 import java.util.List;
 
@@ -17,27 +20,31 @@ import java.util.List;
 public class OutboxRelayScheduler {
 
     private final OutboxEventRepository outboxRepository;
-    private final KafkaTemplate<String, String> kafkaTemplate;
+    private final KafkaTemplate<String, Object> kafkaTemplate;
+    private final ObjectMapper objectMapper;
 
-    private static final String TOPIC_USER_REGISTERED = "user-registered-topic";
-
-    @Scheduled(fixedDelay = 2000)
+    @Scheduled(fixedDelayString = "${app.outbox.fixed-delay}")
     @Transactional
     public void relayEventsToKafka() {
         List<OutboxEvent> events = outboxRepository.findByProcessedFalseOrderByCreatedAtAsc();
 
         for (OutboxEvent event : events) {
             try {
-                String topic = switch (event.getEventType()) {
-                    case "USER_REGISTERED" -> TOPIC_USER_REGISTERED;
-                    default -> throw new IllegalArgumentException("Unknown event type: " + event.getEventType());
-                };
+                EventType type = EventType.valueOf(event.getEventType());
 
-                kafkaTemplate.send(topic, event.getAggregateId(), event.getPayload()).get();
+                String topic = type.getTopic();
+
+                JsonNode payload = objectMapper.readTree(event.getPayload());
+
+                kafkaTemplate.send(topic, event.getAggregateId(),
+                        event.getPayload()).get();
 
                 event.setProcessed(true);
-                log.debug("Successfully relayed outbox event to Kafka. EventId: {}", event.getId());
+                log.debug("Successfully relayed outbox event to Kafka. EventId: {}, Topic: {}", event.getId(), topic);
 
+            } catch ( IllegalArgumentException e) {
+                log.error("Unknown event type in DB: {}. Skipping event.", event.getEventType());
+                event.setProcessed(true);
             } catch (Exception e) {
                 log.error("Failed to relay outbox event to Kafka. EventId: {}. Stopping current batch.", event.getId(), e);
                 break;

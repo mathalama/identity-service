@@ -20,7 +20,7 @@ services:
         condition: service_healthy
       kafka:
         condition: service_healthy
-      flyway:
+      migrate-identity:
         condition: service_completed_successfully
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:8080/actuator/health | grep UP || exit 1"]
@@ -31,12 +31,12 @@ services:
     networks:
       - identity-network
 
-  flyway:
-    image: flyway/flyway:10-alpine
-    container_name: identity-flyway
+  migrate-identity:
+    build:
+      context: .
+      dockerfile: Dockerfile.flyway
+    container_name: migrate-identity
     command: -url=jdbc:postgresql://postgres:5432/${POSTGRES_DB} -user=${POSTGRES_USER} -password=${POSTGRES_PASSWORD} migrate
-    volumes:
-      - ./src/main/resources/db/migration:/flyway/sql
     depends_on:
       postgres:
         condition: service_healthy

@@ -2,6 +2,7 @@ package dev.mathalama.identityservice.infrastructure.messaging;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import dev.mathalama.identityservice.application.dto.event.EventType;
 import dev.mathalama.identityservice.application.dto.event.UserRegisteredEvent;
 import dev.mathalama.identityservice.domain.port.out.EventPublisher;
 import dev.mathalama.identityservice.infrastructure.persistence.outbox.OutboxEvent;
@@ -29,7 +30,7 @@ public class KafkaEventPublisher implements EventPublisher {
             OutboxEvent outboxEvent = OutboxEvent.builder()
                     .id(UUID.fromString(event.eventId()))
                     .aggregateId(event.userId())
-                    .eventType("USER_REGISTERED")
+                    .eventType(EventType.USER_REGISTERED.name())
                     .payload(jsonPayload)
                     .createdAt(new Date(event.timestamp()))
                     .processed(false)

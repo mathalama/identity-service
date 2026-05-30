@@ -1,6 +1,3 @@
--- Add OAuth provider tracking table for multi-provider authentication
--- Allows users to link multiple OAuth providers (Google, GitHub, etc) to one account
-
 CREATE TABLE oauth_providers (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL,
@@ -14,13 +11,11 @@ CREATE TABLE oauth_providers (
     CONSTRAINT unique_provider_per_user UNIQUE (user_id, provider_name)
 );
 
--- Index for quick lookups by provider
 CREATE INDEX idx_oauth_provider_name ON oauth_providers(provider_name);
 CREATE INDEX idx_oauth_provider_id ON oauth_providers(provider_id);
 CREATE INDEX idx_oauth_user_id ON oauth_providers(user_id);
 CREATE INDEX idx_oauth_created_at ON oauth_providers(created_at);
 
--- Comments for documentation
 COMMENT ON TABLE oauth_providers IS 'Tracks OAuth2 provider connections for users - allows one user to have multiple providers linked';
 COMMENT ON COLUMN oauth_providers.provider_name IS 'OAuth provider: GOOGLE, GITHUB, etc';
 COMMENT ON COLUMN oauth_providers.provider_id IS 'The unique ID from the OAuth provider (e.g., Google sub claim)';
