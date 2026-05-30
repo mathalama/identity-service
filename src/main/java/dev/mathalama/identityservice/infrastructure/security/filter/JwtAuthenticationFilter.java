@@ -1,6 +1,6 @@
 package dev.mathalama.identityservice.infrastructure.security.filter;
 
-import dev.mathalama.identityservice.domain.model.User;
+import dev.mathalama.identityservice.domain.model.Role;
 import dev.mathalama.identityservice.domain.port.out.UserRepository;
 import dev.mathalama.identityservice.domain.port.out.TokenStore;
 import jakarta.servlet.FilterChain;
@@ -9,11 +9,15 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.core.userdetails.User;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 
 @Slf4j
@@ -21,11 +25,9 @@ import java.util.UUID;
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final TokenStore tokenStore;
-    private final UserRepository userRepository;
 
-    public JwtAuthenticationFilter(TokenStore tokenStore, UserRepository userRepository) {
+    public JwtAuthenticationFilter(TokenStore tokenStore) {
         this.tokenStore = tokenStore;
-        this.userRepository = userRepository;
     }
 
     @Override
@@ -35,13 +37,20 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             if (token != null && tokenStore.validateToken(token)) {
                 String userId = tokenStore.getUserIdFromToken(token);
                 if (userId != null) {
-                    User user = userRepository.findById(UUID.fromString(userId)).orElse(null);
-                    if (user != null) {
-                        UsernamePasswordAuthenticationToken authentication =
-                                new UsernamePasswordAuthenticationToken(user, null, user.getAuthorities());
-                        SecurityContextHolder.getContext().setAuthentication(authentication);
-                        log.debug("Authenticated user: {}", user.getUsername());
-                    }
+                    List<String> roles = tokenStore.getRolesFromToken(token);
+
+                    List<SimpleGrantedAuthority> authorities = roles.stream()
+                            .map(SimpleGrantedAuthority::new)
+                            .toList();
+
+                    User principal =
+                            new User(userId, "", authorities);
+
+                    UsernamePasswordAuthenticationToken authentication =
+                            new UsernamePasswordAuthenticationToken(principal, null, authorities);
+
+                    SecurityContextHolder.getContext().setAuthentication(authentication);
+                    log.debug("Stateless authentication successful for user ID: {}", userId);
                 }
             }
         } catch (Exception e) {

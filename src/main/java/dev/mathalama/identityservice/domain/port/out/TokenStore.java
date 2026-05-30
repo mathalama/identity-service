@@ -2,6 +2,8 @@ package dev.mathalama.identityservice.domain.port.out;
 
 import dev.mathalama.identityservice.domain.model.User;
 
+import java.util.List;
+
 public interface TokenStore {
     String generateAccessToken(User user);
     String generateRefreshToken(User user);
@@ -16,4 +18,5 @@ public interface TokenStore {
     boolean isAccessTokenBlacklisted(String tokenId);
     long getRemainingExpiration(String token);
     User validateTokenAndExtractUser(String token);
+    List<String> getRolesFromToken(String token);
 }

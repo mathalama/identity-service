@@ -272,4 +272,19 @@ public class RedisTokenStore implements TokenStore {
             return null;
         }
     }
+
+    public List<String> getRolesFromToken(String token) {
+        try {
+            Claims claims = Jwts.parser()
+                    .verifyWith(secretKey)
+                    .build()
+                    .parseSignedClaims(token)
+                    .getPayload();
+
+            return claims.get("roles", List.class);
+        } catch (Exception e) {
+            log.warn("Cannot extract roles from token: {}", e.getMessage());
+            return List.of();
+        }
+    }
 }

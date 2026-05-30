@@ -3,15 +3,24 @@ package dev.mathalama.identityservice.infrastructure.email;
 import dev.mathalama.identityservice.domain.port.out.EmailSender;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
+import lombok.RequiredArgsConstructor;
+
 @Slf4j
 @Service
+@RequiredArgsConstructor
 public class SmtpEmailSender implements EmailSender {
+
+    private final JavaMailSender mailSender;
 
     @Value("${app.frontend.url}")
     private String frontendUrl;
+
+    @Value("${app.mail.username}")
+    private String fromEmail;
 
     @Override
     @Async("taskExecutor")

@@ -20,7 +20,7 @@ import java.util.List;
 public class OutboxRelayScheduler {
 
     private final OutboxEventRepository outboxRepository;
-    private final KafkaTemplate<String, Object> kafkaTemplate;
+    private final KafkaTemplate<Object, Object> kafkaTemplate;
     private final ObjectMapper objectMapper;
 
     @Scheduled(fixedDelayString = "${app.outbox.fixed-delay}")

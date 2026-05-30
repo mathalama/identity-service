@@ -6,6 +6,7 @@ import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
@@ -14,22 +15,16 @@ import java.io.IOException;
 import java.time.Duration;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 
 @Component
 public class RateLimitFilter extends OncePerRequestFilter {
 
-    private final Map<String, Bucket> cache = new ConcurrentHashMap<>();
+    private final RedisTemplate<String, String> redisTemplate;
+    private static final int MAX_REQUESTS_PER_MINUTE = 10;
 
-    private Bucket resolveBucket(String clientIp) {
-        return cache.computeIfAbsent(clientIp, this::newBucket);
-    }
-
-    private Bucket newBucket(String clientIp) {
-        Bandwidth limit = Bandwidth.builder()
-                .capacity(10)
-                .refillGreedy(10, Duration.ofMinutes(1))
-                .build();
-        return Bucket.builder().addLimit(limit).build();
+    public RateLimitFilter(RedisTemplate<String, String> redisTemplate) {
+        this.redisTemplate = redisTemplate;
     }
 
     @Override
@@ -37,15 +32,25 @@ public class RateLimitFilter extends OncePerRequestFilter {
             throws ServletException, IOException {
 
         String path = request.getRequestURI();
+
         if (path.startsWith("/auth/authenticate") || path.startsWith("/auth/register") || path.startsWith("/auth/forgot-password")) {
+
             String clientIp = request.getRemoteAddr();
             String forwardedFor = request.getHeader("X-Forwarded-For");
+
             if (forwardedFor != null && !forwardedFor.isEmpty()) {
                 clientIp = forwardedFor.split(",")[0].trim();
             }
 
-            Bucket bucket = resolveBucket(clientIp);
-            if (!bucket.tryConsume(1)) {
+            String redisKey = "rate_limit:ip:" + clientIp;
+
+            Long currentRequests = redisTemplate.opsForValue().increment(redisKey);
+
+            if (currentRequests != null && currentRequests == 1) {
+                redisTemplate.expire(redisKey, 1, TimeUnit.MINUTES);
+            }
+
+            if (currentRequests != null & currentRequests > MAX_REQUESTS_PER_MINUTE) {
                 response.setStatus(HttpStatus.TOO_MANY_REQUESTS.value());
                 response.setContentType("application/json");
                 response.getWriter().write("{\"error\": \"Too many requests. Please try again later.\"}");
