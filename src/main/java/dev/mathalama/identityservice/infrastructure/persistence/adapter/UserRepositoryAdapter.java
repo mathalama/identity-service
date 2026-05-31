@@ -25,5 +25,9 @@ public class UserRepositoryAdapter implements UserRepository {
         return jpa.findByEmailIgnoreCaseOrUsernameIgnoreCase(email, username);
     }
     @Override
+    public boolean existsByUsername(String username) { return jpa.existsByUsername(username); }
+    @Override
+    public boolean existsByEmail(String email) { return jpa.existsByEmail(email); }
+    @Override
     public User save(User user) { return jpa.save(user); }
 }

@@ -107,6 +107,14 @@ services:
       retries: 5
       start_period: 30s
 
+  zipkin:
+    image: openzipkin/zipkin:latest
+    container_name: identity-zipkin
+    ports:
+      - "9411:9411"
+    networks:
+      - identity-network
+
 networks:
   identity-network:
     driver: bridge

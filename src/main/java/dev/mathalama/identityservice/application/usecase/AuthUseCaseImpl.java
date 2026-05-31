@@ -49,6 +49,13 @@ public class AuthUseCaseImpl implements AuthUseCase {
 
     @Override
     public void register(String username, String email, String password) {
+        if (userRepository.existsByUsername(username)) {
+            throw new UserAlreadyExistException("Username is already taken");
+        }
+        if (userRepository.existsByEmail(email)) {
+            throw new UserAlreadyExistException("Email is already registered");
+        }
+
         String encodePassword = passwordEncoder.encode(password);
         
         Role userRole = roleRepository.findByName("ROLE_USER")

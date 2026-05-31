@@ -18,6 +18,8 @@ public class VerificationController {
 
     @PostMapping("/verify-email")
     public ResponseEntity<VerificationResponse> verifyEmail(@Valid @RequestBody VerifyEmailRequest request) {
+
+
         VerificationResponse response = verificationUseCase.verifyEmail(request.token());
         return ResponseEntity.ok(response);
     }

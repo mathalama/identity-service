@@ -30,6 +30,10 @@ spring:
       value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
     topics:
       user-events: user-events
+    listener:
+      observation-enabled: true
+    template:
+      observation-enabled: true
 
   security:
     user:
@@ -102,6 +106,13 @@ management:
   endpoint:
     health:
       show-details: always
+  tracing:
+    enabled: true
+    sampling:
+      probability: 1.0
+    zipkin:
+      tracing:
+        endpoint: "http://zipkin:9411/api/v2/spans"
 
 logging:
   level:
@@ -111,3 +122,4 @@ logging:
     org.springframework.security.oauth2: DEBUG
   pattern:
     console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] [trace=%X{traceId},span=%X{spanId}] %-5level %logger{36} - %msg%n"
+
