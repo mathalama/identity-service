@@ -41,7 +41,8 @@ public class SmtpEmailSender implements EmailSender {
 
             String template = new String(verificationTemplateResource.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
 
-            String htmlContent = String.format(template, username, verificationLink, verificationLink);
+            String safeUsername = org.springframework.web.util.HtmlUtils.htmlEscape(username);
+            String htmlContent = String.format(template, safeUsername, verificationLink, verificationLink);
 
             MimeMessage message = mailSender.createMimeMessage();
             MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
@@ -68,7 +69,8 @@ public class SmtpEmailSender implements EmailSender {
 
             String template = new String(resetPasswordTemplateResource.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
 
-            String htmlContent = String.format(template, username, resetLink, resetLink);
+            String safeUsername = org.springframework.web.util.HtmlUtils.htmlEscape(username);
+            String htmlContent = String.format(template, safeUsername, resetLink, resetLink);
 
             MimeMessage message = mailSender.createMimeMessage();
             MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");

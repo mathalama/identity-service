@@ -70,9 +70,16 @@ public class OAuth2SuccessHandler implements AuthenticationSuccessHandler {
                 var userByEmail = userRepository.findByEmail(email);
                 
                 if (userByEmail.isPresent()) {
-                    user = userByEmail.get();
-                    logger.info("User found by email. Linking {} provider", providerName);
-                    oauthProviderUseCase.linkOAuthProvider(user, providerName, providerId, email);
+                    Boolean emailVerified = (Boolean) attributes.get("email_verified");
+                    if (emailVerified != null && emailVerified) {
+                        user = userByEmail.get();
+                        logger.info("User found by email and email is verified. Linking {} provider", providerName);
+                        oauthProviderUseCase.linkOAuthProvider(user, providerName, providerId, email);
+                    } else {
+                        logger.warn("Email not verified by OAuth provider. Cannot safely link account.");
+                        response.sendRedirect(frontendProperties.getUrl() + "/login?error=email_not_verified");
+                        return;
+                    }
                 } else {
                     user = createNewUser(email, name, providerId);
                     isNewUser = true;
@@ -107,7 +114,7 @@ public class OAuth2SuccessHandler implements AuthenticationSuccessHandler {
     private User createNewUser(String email, String name, String uniqueId) {
         User newUser = new User();
         newUser.setEmail(email);
-        String uniqueIdSuffix = uniqueId != null && uniqueId.length() >= 6 ? uniqueId.substring(0, 6) : uniqueId;
+        String uniqueIdSuffix = java.util.UUID.randomUUID().toString().substring(0, 8);
         newUser.setUsername(email.split("@")[0] + "_" + uniqueIdSuffix);
         newUser.setPassword("OAUTH2_NO_PASSWORD");
         newUser.setEmailVerified(true);

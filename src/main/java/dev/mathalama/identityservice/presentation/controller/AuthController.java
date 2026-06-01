@@ -47,6 +47,9 @@ public class AuthController {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         if (authentication != null && authentication.getPrincipal() instanceof org.springframework.security.core.userdetails.User principal) {
             String userId = principal.getUsername();
+            if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+                return ResponseEntity.badRequest().build();
+            }
             String accessToken = authHeader.substring(7);
             authUseCase.logout(userId, accessToken);
         }

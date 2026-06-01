@@ -50,11 +50,11 @@ public class PasswordUseCaseImpl implements PasswordUseCase {
 
     @Override
     public void forgotPassword(String email) {
-        User user = userRepository.findByEmail(email).orElse(null);
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new UserNotFoundException("User not found"));
 
         if (user.getAccountState() != AccountState.ACTIVE) {
-            log.warn("Forgot password requested for non-existent or inactive email: {}", email);
-            return;
+            throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.BAD_REQUEST, "Account is inactive");
         }
 
         if (!verificationTokenStore.canResendToken(user)) {

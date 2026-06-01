@@ -65,7 +65,7 @@ public class TokenUseCaseImpl implements TokenUseCase {
             User user = userRepository.findById(UUID.fromString(userId))
                     .orElseThrow(() -> new UserNotFoundException("User not found"));
                     
-            if (user.getAccountState().name().equals("DELETED") || user.getAccountState().name().equals("DISABLED")) {
+            if (user.getAccountState() == dev.mathalama.identityservice.domain.enums.AccountState.DELETED || user.getAccountState() == dev.mathalama.identityservice.domain.enums.AccountState.DISABLED) {
                 return TokenValidationResponse.failure("User account is inactive");
             }
             
