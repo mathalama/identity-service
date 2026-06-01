@@ -1,12 +1,15 @@
 package dev.mathalama.identityservice.presentation.controller;
 
+import dev.mathalama.identityservice.application.dto.request.OAuthExchangeRequest;
 import dev.mathalama.identityservice.application.dto.request.SignUpRequest;
 import dev.mathalama.identityservice.application.dto.request.SignInRequest;
 import dev.mathalama.identityservice.application.dto.response.AuthResponse;
 import dev.mathalama.identityservice.application.dto.response.MessageResponse;
 import dev.mathalama.identityservice.domain.model.User;
 import dev.mathalama.identityservice.domain.port.in.AuthUseCase;
+import dev.mathalama.identityservice.domain.port.in.OAuthExchangeUseCase;
 import dev.mathalama.identityservice.domain.port.out.TokenStore;
+
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -22,6 +25,7 @@ public class AuthController {
 
     private final AuthUseCase authUseCase;
     private final TokenStore tokenStore;
+    private final OAuthExchangeUseCase oAuthExchangeUseCase;
 
     @PostMapping("/register")
     @ResponseStatus(HttpStatus.CREATED)
@@ -41,10 +45,17 @@ public class AuthController {
     @PostMapping("/logout")
     public ResponseEntity<Void> logout(@RequestHeader("Authorization") String authHeader) {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        if (authentication != null && authentication.getPrincipal() instanceof User user) {
+        if (authentication != null && authentication.getPrincipal() instanceof org.springframework.security.core.userdetails.User principal) {
+            String userId = principal.getUsername();
             String accessToken = authHeader.substring(7);
-            authUseCase.logout(user.getId().toString(), accessToken);
+            authUseCase.logout(userId, accessToken);
         }
         return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/oauth-exchange")
+    public ResponseEntity<AuthResponse> exchangeCode(@Valid @RequestBody OAuthExchangeRequest request) {
+        AuthResponse response = oAuthExchangeUseCase.exchangeCodeForTokens(request.code());
+        return ResponseEntity.ok(response);
     }
 }

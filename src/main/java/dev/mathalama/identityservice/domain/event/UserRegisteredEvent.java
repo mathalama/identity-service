@@ -14,7 +14,7 @@ public class UserRegisteredEvent implements Serializable {
     private String email;
     private String username;
     private String fullName;
-    private String authProvider; // OAUTH2_GOOGLE, OAUTH2_GITHUB, LOCAL
+    private String authProvider;
     private long timestamp;
 
     public UserRegisteredEvent() {
@@ -30,7 +30,6 @@ public class UserRegisteredEvent implements Serializable {
         this.timestamp = System.currentTimeMillis();
     }
 
-    // Getters and setters
     public UUID getUserId() {
         return userId;
     }

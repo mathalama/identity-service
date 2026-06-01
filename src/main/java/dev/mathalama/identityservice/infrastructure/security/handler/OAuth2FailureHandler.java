@@ -38,8 +38,7 @@ public class OAuth2FailureHandler implements AuthenticationFailureHandler {
         logger.error("Request URL: {}", request.getRequestURL());
         logger.error("Request query string: {}", request.getQueryString());
         logger.error("Request parameters: {}", request.getParameterMap());
-        
-        // Log stack trace
+
         logger.error("Full exception stack trace:", exception);
         
         if (exception.getCause() != null) {

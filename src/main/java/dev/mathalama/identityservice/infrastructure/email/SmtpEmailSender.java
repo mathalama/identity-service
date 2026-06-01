@@ -39,10 +39,8 @@ public class SmtpEmailSender implements EmailSender {
             String verificationLink = String.format("%s/verify-email?token=%s", frontendUrl, verificationToken);
             log.info("Sending verification email to: {}", email);
 
-            // Читаем шаблон из файла
             String template = new String(verificationTemplateResource.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
 
-            // Вставляем переменные (имя, ссылка для кнопки, ссылка для текста)
             String htmlContent = String.format(template, username, verificationLink, verificationLink);
 
             MimeMessage message = mailSender.createMimeMessage();
@@ -68,10 +66,8 @@ public class SmtpEmailSender implements EmailSender {
             String resetLink = String.format("%s/reset-password?token=%s", frontendUrl, resetToken);
             log.info("Sending password reset email to: {}", email);
 
-            // Читаем шаблон из файла
             String template = new String(resetPasswordTemplateResource.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
 
-            // Вставляем переменные
             String htmlContent = String.format(template, username, resetLink, resetLink);
 
             MimeMessage message = mailSender.createMimeMessage();

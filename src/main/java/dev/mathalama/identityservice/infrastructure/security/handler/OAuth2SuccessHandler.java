@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.util.Date;
 import java.util.Map;
 
+import dev.mathalama.identityservice.domain.port.in.OAuthExchangeUseCase;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.security.core.Authentication;
@@ -31,17 +32,19 @@ public class OAuth2SuccessHandler implements AuthenticationSuccessHandler {
     private final EventPublisher eventPublisher;
     private final OAuthProviderUseCase oauthProviderUseCase;
     private final FrontendProperties frontendProperties;
+    private final OAuthExchangeUseCase oAuthExchangeUseCase;
 
-    public OAuth2SuccessHandler(UserRepository userRepository, 
-                               TokenStore tokenStore, 
-                               EventPublisher eventPublisher,
-                               OAuthProviderUseCase oauthProviderUseCase,
-                               FrontendProperties frontendProperties) {
+    public OAuth2SuccessHandler(UserRepository userRepository,
+                                TokenStore tokenStore,
+                                EventPublisher eventPublisher,
+                                OAuthProviderUseCase oauthProviderUseCase,
+                                FrontendProperties frontendProperties, OAuthExchangeUseCase oAuthExchangeUseCase) {
         this.userRepository = userRepository;
         this.tokenStore = tokenStore;
         this.eventPublisher = eventPublisher;
         this.oauthProviderUseCase = oauthProviderUseCase;
         this.frontendProperties = frontendProperties;
+        this.oAuthExchangeUseCase = oAuthExchangeUseCase;
     }
 
     @Override
@@ -90,11 +93,10 @@ public class OAuth2SuccessHandler implements AuthenticationSuccessHandler {
                 eventPublisher.publishUserRegistered(event);
             }
             
-            String accessToken = tokenStore.generateAccessToken(user);
-            String refreshToken = tokenStore.generateRefreshToken(user);
-            
-            String redirectUrl = String.format("%s/auth/callback?accessToken=%s&refreshToken=%s&userId=%s", 
-                    frontendProperties.getUrl(), accessToken, refreshToken, user.getId());
+            String tempCode = oAuthExchangeUseCase.createExchangeCode(user.getId().toString());
+
+            String redirectUrl = String.format("%s/auth/callback?code=%s",
+                    frontendProperties.getUrl(), tempCode);
             response.sendRedirect(redirectUrl);
         } else {
             logger.error("Invalid OAuth2User type");
@@ -128,7 +130,7 @@ public class OAuth2SuccessHandler implements AuthenticationSuccessHandler {
     private String getAuthProviderName(HttpServletRequest request) {
         String requestUri = request.getRequestURI();
         if (requestUri.contains("google")) return "GOOGLE";
-        if (requestUri.contains("github")) return "GITHUB";
+
         if (requestUri.contains("microsoft")) return "MICROSOFT";
         return "UNKNOWN";
     }

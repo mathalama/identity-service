@@ -20,7 +20,7 @@ import java.util.UUID;
 public class KafkaEventPublisher implements EventPublisher {
 
     private final OutboxEventRepository outboxEventRepository;
-    private final ObjectMapper objectMapper; // Инструмент Spring для конвертации в JSON
+    private final ObjectMapper objectMapper;
 
     @Override
     public void publishUserRegistered(UserRegisteredEvent event) {
