@@ -19,6 +19,8 @@ import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.util.Date;
@@ -77,10 +79,15 @@ public class AuthUseCaseImpl implements AuthUseCase {
 
             var event = UserRegisteredEvent.create(savedUser.getId().toString(), savedUser.getUsername(), savedUser.getEmail(), "LOCAL");
             eventPublisher.publishUserRegistered(event);
-            
+
             String verificationToken = verificationTokenStore.generateVerificationToken(savedUser);
-            emailSender.sendVerificationEmail(email, username, verificationToken);
-            
+
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                public void afterCommit() {
+                    emailSender.sendVerificationEmail(email, username, verificationToken);
+                }
+            });
+
             log.info("User registered successfully: {} (email: {}). Verification email sent.", username, email);
             
         } catch (DataIntegrityViolationException ex) {

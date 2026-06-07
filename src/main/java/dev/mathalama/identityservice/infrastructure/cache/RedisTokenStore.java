@@ -2,6 +2,7 @@ package dev.mathalama.identityservice.infrastructure.cache;
 
 import dev.mathalama.identityservice.domain.port.out.TokenStore;
 import dev.mathalama.identityservice.domain.model.User;
+import dev.mathalama.identityservice.domain.port.out.UserRepository;
 import dev.mathalama.identityservice.infrastructure.persistence.jpa.JpaUserRepository;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.ExpiredJwtException;
@@ -14,12 +15,9 @@ import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 
 import javax.crypto.SecretKey;
-import java.util.Date;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
+import java.util.*;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -29,7 +27,7 @@ public class RedisTokenStore implements TokenStore {
     private final long accessTokenExpiration;
     private final long refreshTokenExpiration;
     private final RedisTemplate<String, String> redisTemplate;
-    private final JpaUserRepository userRepository;
+    private final UserRepository userRepository;
 
     private static final String REFRESH_TOKEN_PREFIX = "refresh:token:";
     private static final String BLACKLIST_PREFIX = "blacklist:access:";
@@ -38,7 +36,7 @@ public class RedisTokenStore implements TokenStore {
                           @Value("${jwt.expiration}") long accessExpiration,
                           @Value("${jwt.refresh-expiration}") long refreshExpiration,
                           RedisTemplate<String, String> redisTemplate,
-                          JpaUserRepository userRepository) {
+                           UserRepository userRepository) {
         this.secretKey = Keys.hmacShaKeyFor(secret.getBytes());
         this.accessTokenExpiration = accessExpiration;
         this.refreshTokenExpiration = refreshExpiration;
@@ -93,9 +91,14 @@ public class RedisTokenStore implements TokenStore {
 
     @Override
     public void storeRefreshToken(String userId, String tokenId) {
-        String key = REFRESH_TOKEN_PREFIX + userId + ":" + tokenId;
-        redisTemplate.opsForValue().set(key, tokenId, refreshTokenExpiration, TimeUnit.MILLISECONDS);
-        log.debug("Stored refresh token for user: {} with tokenId: {}", userId, tokenId);
+        String tokenKey = REFRESH_TOKEN_PREFIX + userId + ":" + tokenId;
+        String userSetKey = "user:tokens:" + userId;
+
+        redisTemplate.opsForValue().set(tokenKey, tokenId, refreshTokenExpiration, TimeUnit.MILLISECONDS);
+
+        redisTemplate.opsForSet().add(userSetKey, tokenId);
+
+        redisTemplate.expire(userSetKey, refreshTokenExpiration, TimeUnit.MILLISECONDS);
     }
 
     @Override
@@ -113,12 +116,19 @@ public class RedisTokenStore implements TokenStore {
     }
 
     public void revokeAllRefreshTokens(String userId) {
-        String pattern = REFRESH_TOKEN_PREFIX + userId + ":";
-        var keys = redisTemplate.keys(pattern);
-        if (keys != null && !keys.isEmpty()) {
-            redisTemplate.delete(keys);
+        String userSetKey = "user:tokens:" + userId;
+
+        Set<String> tokenIds = redisTemplate.opsForSet().members(userSetKey);
+
+        if (tokenIds != null && !tokenIds.isEmpty()) {
+            List<String> keysToDelete = tokenIds.stream()
+                    .map(id -> REFRESH_TOKEN_PREFIX + userId + ":" + id)
+                    .collect(Collectors.toList());
+
+            redisTemplate.delete(keysToDelete);
         }
-        log.debug("Revoked ALL refresh tokens for user: {}", userId);
+        redisTemplate.delete(userSetKey);
+        log.info("Revoked ALL tokens for user: {} using SET instead of KEYS", userId);
     }
 
     @Override

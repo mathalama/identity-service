@@ -18,19 +18,6 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
-/**
- * OAuthProvider entity to track OAuth2 provider connections to User.
- * Allows a single user to have multiple OAuth providers (Google, GitHub, etc.) linked to their account.
- *
- * When a user logs in via OAuth, we check if this provider is already linked to the account,
- * or if we need to create a new link. This enables seamless account unification.
- *
- * Example:
- * - User registers with email: john@example.com
- * - Later, user tries to login with Google. We check if Google account email matches OR
- *   if they explicitly confirm the link. If yes, we create OAuthProvider record linking
- *   this Google account to the existing user.
- */
 @Entity
 @Table(
     name = "oauth_providers",

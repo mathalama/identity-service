@@ -73,6 +73,10 @@ spring:
   lifecycle:
     timeout-per-shutdown-phase: 20s
 
+  threads:
+    virtual:
+      enabled: true
+
 jwt:
   secret: ${JWT_SECRET}
   expiration: ${JWT_EXPIRATION}

@@ -22,31 +22,24 @@ public class OutboxRelayScheduler {
     private final OutboxEventRepository outboxRepository;
     private final KafkaTemplate<Object, Object> kafkaTemplate;
     private final ObjectMapper objectMapper;
+    private final OutboxProcessor outboxProcessor;
 
     @Scheduled(fixedDelayString = "${app.outbox.fixed-delay}")
-    @Transactional
     public void relayEventsToKafka() {
         List<OutboxEvent> events = outboxRepository.findByProcessedFalseOrderByCreatedAtAsc();
 
+        int consecutiveErrors = 0;
+
         for (OutboxEvent event : events) {
             try {
-                EventType type = EventType.valueOf(event.getEventType());
-
-                String topic = type.getTopic();
-
-                JsonNode payload = objectMapper.readTree(event.getPayload());
-
-                kafkaTemplate.send(topic, event.getAggregateId(),
-                        event.getPayload()).get();
-
-                event.setProcessed(true);
-                log.debug("Successfully relayed outbox event to Kafka. EventId: {}, Topic: {}", event.getId(), topic);
-
-            } catch ( IllegalArgumentException e) {
-                log.error("Unknown event type in DB: {}. Skipping event.", event.getEventType());
-                event.setProcessed(true);
+                outboxProcessor.processEvent(event);
+                consecutiveErrors = 0;
             } catch (Exception e) {
-                log.error("Failed to relay outbox event to Kafka. EventId: {}. Stopping current batch.", event.getId(), e);
+                consecutiveErrors++;
+                log.error("Failed to relay event {}: {}", event.getId(), e.getMessage());
+            }
+            if (consecutiveErrors >= 5) {
+                log.warn("Stopped batch processing after 5 consecutive errors. Infrastructure might be down.");
                 break;
             }
         }
